@@ -23,6 +23,9 @@ struct ContentView: View {
     @State private var newPatientGender = ""
     @State private var newPatientPlaceOfBirth = ""
     @State private var newPatientBirthProvince = ""
+    @State private var newPatientBirthPlaceSuggestions: [ItalianTaxCode.PlaceSuggestion] = []
+    @State private var showNewPatientBirthPlaceSuggestions = false
+    @FocusState private var isNewPatientBirthPlaceFocused: Bool
 
     private var filteredPatients: [Patient] {
         let trimmedQuery = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -50,6 +53,7 @@ struct ContentView: View {
         } detail: {
             detailContent
         }
+        .navigationSplitViewStyle(.prominentDetail)
         .frame(minWidth: 900, minHeight: 640)
         .toolbar {
             ToolbarItemGroup(placement: .primaryAction) {
@@ -170,6 +174,14 @@ struct ContentView: View {
         !newPatientPlaceOfBirth.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
+    private var hasNewPatientDraftData: Bool {
+        !newPatientFirstName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+        !newPatientLastName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+        !newPatientGender.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+        !newPatientPlaceOfBirth.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ||
+        !newPatientBirthProvince.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     private var addPatientSheet: some View {
         VStack(alignment: .leading, spacing: 16) {
             Text("Nuovo paziente")
@@ -180,14 +192,62 @@ struct ContentView: View {
             TextField("Cognome *", text: $newPatientLastName)
             DatePicker("Data di nascita *", selection: $newPatientBirthDate, displayedComponents: .date)
             Picker("Genere", selection: $newPatientGender) {
-                Text("Non specificato").tag("")
                 Text("Maschio").tag("Maschio")
                 Text("Femmina").tag("Femmina")
                 Text("Altro").tag("Altro")
             }
             .pickerStyle(.segmented)
 
-            TextField("Luogo di nascita *", text: $newPatientPlaceOfBirth)
+            VStack(alignment: .leading, spacing: 6) {
+                TextField("Luogo di nascita *", text: $newPatientPlaceOfBirth)
+                    .focused($isNewPatientBirthPlaceFocused)
+                    .onChange(of: newPatientPlaceOfBirth) { _, _ in
+                        refreshNewPatientBirthPlaceSuggestions()
+                        showNewPatientBirthPlaceSuggestions = !newPatientPlaceOfBirth
+                            .trimmingCharacters(in: .whitespacesAndNewlines)
+                            .isEmpty
+                    }
+                    .onSubmit {
+                        showNewPatientBirthPlaceSuggestions = false
+                    }
+                    .onChange(of: isNewPatientBirthPlaceFocused) { _, focused in
+                        if !focused {
+                            showNewPatientBirthPlaceSuggestions = false
+                        }
+                    }
+                    .onChange(of: newPatientBirthProvince) { _, _ in
+                        if showNewPatientBirthPlaceSuggestions {
+                            refreshNewPatientBirthPlaceSuggestions()
+                        }
+                    }
+
+                if showNewPatientBirthPlaceSuggestions &&
+                    !newPatientBirthPlaceSuggestions.isEmpty &&
+                    !newPatientPlaceOfBirth.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 2) {
+                            ForEach(newPatientBirthPlaceSuggestions) { suggestion in
+                                Button {
+                                    applyNewPatientBirthPlaceSuggestion(suggestion)
+                                } label: {
+                                    Text(suggestion.displayText)
+                                        .font(.caption)
+                                        .frame(maxWidth: .infinity, alignment: .leading)
+                                }
+                                .buttonStyle(.plain)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 4)
+                            }
+                        }
+                    }
+                    .frame(maxHeight: 120)
+                    .padding(6)
+                    .background(
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(Color(nsColor: .controlBackgroundColor))
+                    )
+                }
+            }
             TextField("Provincia (es. TO)", text: $newPatientBirthProvince)
 
             HStack {
@@ -208,6 +268,17 @@ struct ContentView: View {
         .textFieldStyle(.roundedBorder)
         .padding(20)
         .frame(minWidth: 420)
+        .onExitCommand {
+            if showNewPatientBirthPlaceSuggestions {
+                showNewPatientBirthPlaceSuggestions = false
+                newPatientBirthPlaceSuggestions = []
+            } else if hasNewPatientDraftData {
+                NSSound.beep()
+            } else {
+                resetNewPatientDraft()
+                showAddPatientSheet = false
+            }
+        }
     }
 
     private func addPatient() {
@@ -254,6 +325,29 @@ struct ContentView: View {
         newPatientGender = ""
         newPatientPlaceOfBirth = ""
         newPatientBirthProvince = ""
+        newPatientBirthPlaceSuggestions = []
+        showNewPatientBirthPlaceSuggestions = false
+    }
+
+    private func refreshNewPatientBirthPlaceSuggestions() {
+        let provinceFilter: String? = {
+            let trimmed = newPatientBirthProvince
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .uppercased()
+            return trimmed.count == 2 ? trimmed : nil
+        }()
+
+        newPatientBirthPlaceSuggestions = ItalianTaxCode.suggestions(
+            for: newPatientPlaceOfBirth,
+            province: provinceFilter
+        )
+    }
+
+    private func applyNewPatientBirthPlaceSuggestion(_ suggestion: ItalianTaxCode.PlaceSuggestion) {
+        newPatientPlaceOfBirth = suggestion.name
+        newPatientBirthProvince = suggestion.province
+        newPatientBirthPlaceSuggestions = []
+        showNewPatientBirthPlaceSuggestions = false
     }
 
     private func openSelectedPatientWindow() {
@@ -459,71 +553,41 @@ private struct PatientSelectionSummaryView: View {
                             .frame(maxWidth: .infinity)
                         }
 
-                        ViewThatFits(in: .horizontal) {
-                            HStack(alignment: .top, spacing: 12) {
-                                VStack(alignment: .leading, spacing: 6) {
-                                    demographicTitle("Data di nascita *")
-                                    DatePicker("", selection: birthDateBinding, displayedComponents: .date)
-                                        .labelsHidden()
-                                        .frame(width: 200, alignment: .leading)
-                                        .onChange(of: patient.dateOfBirth) { _, _ in
-                                            autoFillTaxCodeIfPossible()
-                                        }
-                                }
-                                .frame(width: 220, alignment: .leading)
-
-                                VStack(alignment: .leading, spacing: 6) {
-                                    demographicTitle("Genere")
-                                    Picker("", selection: Binding(
-                                        get: { patient.gender ?? "" },
-                                        set: { patient.gender = $0.isEmpty ? nil : $0 }
-                                    )) {
-                                        Text("Non specificato").tag("")
-                                        Text("Maschio").tag("Maschio")
-                                        Text("Femmina").tag("Femmina")
-                                        Text("Altro").tag("Altro")
-                                    }
+                        HStack(alignment: .top, spacing: 12) {
+                            VStack(alignment: .leading, spacing: 6) {
+                                demographicTitle("Data di nascita *")
+                                DatePicker("", selection: birthDateBinding, displayedComponents: .date)
                                     .labelsHidden()
-                                    .pickerStyle(.segmented)
-                                    .onChange(of: patient.gender) { _, _ in
-                                        patient.updatedAt = .now
+                                    .frame(maxWidth: 180, alignment: .leading)
+                                    .onChange(of: patient.dateOfBirth) { _, _ in
                                         autoFillTaxCodeIfPossible()
                                     }
-                                }
-                                .frame(maxWidth: .infinity)
                             }
+                            .frame(maxWidth: 190, alignment: .leading)
 
-                            VStack(alignment: .leading, spacing: 12) {
-                                VStack(alignment: .leading, spacing: 6) {
-                                    demographicTitle("Data di nascita *")
-                                    DatePicker("", selection: birthDateBinding, displayedComponents: .date)
-                                        .labelsHidden()
-                                        .frame(maxWidth: .infinity, alignment: .leading)
-                                        .onChange(of: patient.dateOfBirth) { _, _ in
-                                            autoFillTaxCodeIfPossible()
-                                        }
+                            VStack(alignment: .leading, spacing: 6) {
+                                demographicTitle("Genere")
+                                    .frame(width: 280, alignment: .leading)
+                                Picker("", selection: Binding(
+                                    get: { patient.gender ?? "" },
+                                    set: { patient.gender = $0.isEmpty ? nil : $0 }
+                                )) {
+                                    Text("Maschio").tag("Maschio")
+                                    Text("Femmina").tag("Femmina")
+                                    Text("Altro").tag("Altro")
                                 }
-
-                                VStack(alignment: .leading, spacing: 6) {
-                                    demographicTitle("Genere")
-                                    Picker("", selection: Binding(
-                                        get: { patient.gender ?? "" },
-                                        set: { patient.gender = $0.isEmpty ? nil : $0 }
-                                    )) {
-                                        Text("Non specificato").tag("")
-                                        Text("Maschio").tag("Maschio")
-                                        Text("Femmina").tag("Femmina")
-                                        Text("Altro").tag("Altro")
-                                    }
-                                    .labelsHidden()
-                                    .pickerStyle(.segmented)
-                                    .onChange(of: patient.gender) { _, _ in
-                                        patient.updatedAt = .now
-                                        autoFillTaxCodeIfPossible()
-                                    }
+                                .labelsHidden()
+                                .pickerStyle(.segmented)
+                                .frame(width: 280, alignment: .leading)
+                                .onChange(of: patient.gender) { _, _ in
+                                    patient.updatedAt = .now
+                                    autoFillTaxCodeIfPossible()
                                 }
                             }
+                            .frame(width: 280, alignment: .leading)
+                            .frame(maxWidth: .infinity, alignment: .trailing)
                         }
+                        .frame(maxWidth: .infinity, alignment: .leading)
 
                         HStack(alignment: .top, spacing: 12) {
                             VStack(alignment: .leading, spacing: 6) {
@@ -701,8 +765,9 @@ private struct PatientSelectionSummaryView: View {
                         }
                     }
                     .textFieldStyle(.roundedBorder)
-                    .frame(maxWidth: 900, alignment: .leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.vertical, 2)
+                    .clipped()
                 } label: {
                     Label("Anagrafica", systemImage: "person.text.rectangle")
                         .font(.headline)
@@ -725,6 +790,9 @@ private struct PatientSelectionSummaryView: View {
             }
             .padding(24)
             .frame(maxWidth: .infinity, alignment: .topLeading)
+        }
+        .transaction { transaction in
+            transaction.animation = nil
         }
         .onAppear {
             hydrateResidenceFieldsIfNeeded()
