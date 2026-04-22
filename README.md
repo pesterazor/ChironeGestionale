@@ -1,4 +1,4 @@
-# 🧠 ChironeGestionale
+# 🧠 Chirone Gestionale
 
 Gestionale pazienti minimalista, locale e orientato alla pratica psichiatrica. Il nome è scelto in onore a Chirone (Chéiron), una figura della mitologia greca associata alla medicina e alla conoscenza.
 
@@ -103,7 +103,7 @@ Questa separazione riduce la complessità dell’interfaccia e minimizza il risc
 
 ## Requisiti
 
-- macOS (versione recente)
+- macOS (da versione 26.0 in poi)
 - Xcode (ultima versione stabile consigliata)
 
 ---
