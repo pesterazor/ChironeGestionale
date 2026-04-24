@@ -122,6 +122,12 @@ final class Patient {
 }
 
 extension Patient {
+    private static let italianShortDateStyle = Date.FormatStyle
+        .dateTime
+        .day()
+        .month(.abbreviated)
+        .locale(Locale(identifier: "it_IT"))
+
     var fullName: String {
         let composed = "\(firstName) \(lastName)".trimmingCharacters(in: .whitespacesAndNewlines)
         return composed.isEmpty ? "Paziente senza nome" : composed
@@ -154,5 +160,16 @@ extension Patient {
         !firstName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
         !lastName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty &&
         dateOfBirth != nil
+    }
+
+    var lastVisitDate: Date? {
+        clinicalNotes
+            .map(\.createdAt)
+            .max()
+    }
+
+    var lastVisitDateLabel: String? {
+        guard let lastVisitDate else { return nil }
+        return lastVisitDate.formatted(Self.italianShortDateStyle).lowercased()
     }
 }

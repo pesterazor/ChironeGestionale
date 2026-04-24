@@ -1,4 +1,4 @@
-# 🧠 Chirone Gestionale
+# 🧠 ChironeGestionale
 
 Gestionale pazienti minimalista, locale e orientato alla pratica psichiatrica. Il nome è scelto in onore a Chirone (Chéiron), una figura della mitologia greca associata alla medicina e alla conoscenza.
 
@@ -103,7 +103,7 @@ Questa separazione riduce la complessità dell’interfaccia e minimizza il risc
 
 ## Requisiti
 
-- macOS (da versione 26.0 in poi)
+- macOS (versione recente)
 - Xcode (ultima versione stabile consigliata)
 
 ---
@@ -112,41 +112,3 @@ Questa separazione riduce la complessità dell’interfaccia e minimizza il risc
 
 ```bash
 git clone https://github.com/<tuo-username>/ChironeGestionale.git
-```  
-
-⸻
-
-## Stato del progetto
-
-Prototipo in fase iniziale.
-
-Il codice è attivamente sviluppato e soggetto a modifiche e refactor.
-
-⸻
-
-## Contributi
-
-I contributi sono benvenuti, in particolare su:
-
-* architettura SwiftUI
-* modellazione dati clinici
-* ottimizzazione del flusso di lavoro
-* UX su macOS
-
-⸻
-
-## ⚠️ Disclaimer
-
-Questo software è sperimentale e non sostituisce:
-
-* sistemi certificati di cartella clinica
-* obblighi normativi nazionali o regionali
-* software medicali validati
-
-L’utilizzo è a discrezione dell’utente.
-
-⸻
-
-## Licenza
-
-Open-source. Vedi file LICENSE.
