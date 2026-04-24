@@ -45,6 +45,11 @@ final class Patient {
     // MARK: - Terapia attuale (testuale legacy per MVP)
     var currentTherapySummary: String
 
+    // MARK: - Funzionalità d'organo (verde/giallo/rosso)
+    var heartFunctionStatus: String?
+    var liverFunctionStatus: String?
+    var kidneyFunctionStatus: String?
+
     // MARK: - Relazioni
     @Relationship(deleteRule: .cascade, inverse: \TherapyMedication.patient)
     var therapyItems: [TherapyMedication]
@@ -83,6 +88,9 @@ final class Patient {
         allergies: String = "",
         exemptions: String = "",
         currentTherapySummary: String = "",
+        heartFunctionStatus: String? = nil,
+        liverFunctionStatus: String? = nil,
+        kidneyFunctionStatus: String? = nil,
         therapyItems: [TherapyMedication] = [],
         clinicalNotes: [ClinicalNote] = [],
         createdAt: Date = .now,
@@ -114,6 +122,9 @@ final class Patient {
         self.allergies = allergies
         self.exemptions = exemptions
         self.currentTherapySummary = currentTherapySummary
+        self.heartFunctionStatus = heartFunctionStatus
+        self.liverFunctionStatus = liverFunctionStatus
+        self.kidneyFunctionStatus = kidneyFunctionStatus
         self.therapyItems = therapyItems
         self.clinicalNotes = clinicalNotes
         self.createdAt = createdAt

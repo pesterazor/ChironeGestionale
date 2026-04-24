@@ -42,6 +42,10 @@ private struct ClinicalNoteCardView: View {
         .buttonStyle(.plain)
     }
 
+    private var isAutomaticTherapyUpdate: Bool {
+        note.content.hasPrefix("Aggiornamento terapia farmacologica:")
+    }
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack {
@@ -57,21 +61,25 @@ private struct ClinicalNoteCardView: View {
                         .foregroundStyle(.secondary)
                 }
 
-                Text("Benessere percepito: \(note.wellbeingScore)/10")
-                    .font(.caption)
-                    .fontWeight(.semibold)
-                    .foregroundStyle(.white)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 4)
-                    .background(
-                        Capsule()
-                            .fill(wellbeingColor(for: note.wellbeingScore).opacity(0.9))
-                    )
+                if !isAutomaticTherapyUpdate {
+                    Text("Benessere percepito: \(note.wellbeingScore)/10")
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundStyle(.white)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 4)
+                        .background(
+                            Capsule()
+                                .fill(wellbeingColor(for: note.wellbeingScore).opacity(0.9))
+                        )
+                }
 
                 actionIconButton(symbol: isEditing ? "checkmark.circle" : "pencil") {
                     if isEditing {
                         note.content = draftContent
-                        note.wellbeingScore = draftWellbeing
+                        if !isAutomaticTherapyUpdate {
+                            note.wellbeingScore = draftWellbeing
+                        }
                         note.updatedAt = .now
                         isEditing = false
                     } else {
@@ -117,12 +125,14 @@ private struct ClinicalNoteCardView: View {
                             .strokeBorder(Color.secondary.opacity(0.25))
                     )
 
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("Benessere percepito: \(draftWellbeing)/10")
-                            .font(.subheadline)
-                            .foregroundStyle(.secondary)
+                    if !isAutomaticTherapyUpdate {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Text("Benessere percepito: \(draftWellbeing)/10")
+                                .font(.subheadline)
+                                .foregroundStyle(.secondary)
 
-                        PerceivedWellbeingPickerView(wellbeing: $draftWellbeing)
+                            PerceivedWellbeingPickerView(wellbeing: $draftWellbeing)
+                        }
                     }
 
                     HStack {
@@ -134,7 +144,9 @@ private struct ClinicalNoteCardView: View {
 
                         Button("Salva") {
                             note.content = draftContent
-                            note.wellbeingScore = draftWellbeing
+                            if !isAutomaticTherapyUpdate {
+                                note.wellbeingScore = draftWellbeing
+                            }
                             note.updatedAt = .now
                             isEditing = false
                         }
@@ -445,6 +457,10 @@ struct ClinicalUpdatesSectionView: View {
             refreshTimelineNotes()
         }
         .onChange(of: patient.id) { _, _ in
+            notesPageOffset = 0
+            refreshTimelineNotes()
+        }
+        .onChange(of: patient.clinicalNotes.count) { _, _ in
             notesPageOffset = 0
             refreshTimelineNotes()
         }
