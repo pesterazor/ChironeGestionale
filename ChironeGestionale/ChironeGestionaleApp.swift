@@ -8,6 +8,21 @@
 import SwiftUI
 import SwiftData
 
+private struct PreferencesView: View {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Preferenze")
+                .font(.title2)
+                .fontWeight(.semibold)
+
+            Text("In questa sezione verranno configurate le impostazioni dell'app.")
+                .foregroundStyle(.secondary)
+        }
+        .padding(20)
+        .frame(minWidth: 460, minHeight: 220, alignment: .topLeading)
+    }
+}
+
 @main
 struct ChironeGestionaleApp: App {
     var sharedModelContainer: ModelContainer = {
@@ -37,5 +52,9 @@ struct ChironeGestionaleApp: App {
             ContentView()
         }
         .modelContainer(sharedModelContainer)
+
+        Settings {
+            PreferencesView()
+        }
     }
 }

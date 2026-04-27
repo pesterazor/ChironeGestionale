@@ -51,7 +51,24 @@ private final class PatientWindowDelegate: NSObject, NSWindowDelegate {
         self.onClose = onClose
     }
 
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        if !PatientWindowUnsavedStateStore.shared.hasUnsavedChanges(for: patientID) {
+            return true
+        }
+
+        let alert = NSAlert()
+        alert.messageText = "Chiudere senza salvare?"
+        alert.informativeText = "Sono presenti modifiche non salvate nella scheda clinica. Se chiudi ora, i dati non salvati andranno persi."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Chiudi senza salvare")
+        alert.addButton(withTitle: "Annulla")
+
+        let response = alert.runModal()
+        return response == .alertFirstButtonReturn
+    }
+
     func windowWillClose(_ notification: Notification) {
+        PatientWindowUnsavedStateStore.shared.clear(for: patientID)
         onClose(patientID)
     }
 }

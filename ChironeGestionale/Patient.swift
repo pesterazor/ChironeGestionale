@@ -50,6 +50,9 @@ final class Patient {
     var liverFunctionStatus: String?
     var kidneyFunctionStatus: String?
 
+    // MARK: - Esami ematochimici (payload JSON tabellare)
+    var bloodTestsTableJSON: String?
+
     // MARK: - Relazioni
     @Relationship(deleteRule: .cascade, inverse: \TherapyMedication.patient)
     var therapyItems: [TherapyMedication]
@@ -91,6 +94,7 @@ final class Patient {
         heartFunctionStatus: String? = nil,
         liverFunctionStatus: String? = nil,
         kidneyFunctionStatus: String? = nil,
+        bloodTestsTableJSON: String? = nil,
         therapyItems: [TherapyMedication] = [],
         clinicalNotes: [ClinicalNote] = [],
         createdAt: Date = .now,
@@ -125,6 +129,7 @@ final class Patient {
         self.heartFunctionStatus = heartFunctionStatus
         self.liverFunctionStatus = liverFunctionStatus
         self.kidneyFunctionStatus = kidneyFunctionStatus
+        self.bloodTestsTableJSON = bloodTestsTableJSON
         self.therapyItems = therapyItems
         self.clinicalNotes = clinicalNotes
         self.createdAt = createdAt

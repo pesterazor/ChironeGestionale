@@ -15,6 +15,7 @@ private func wellbeingColor(for score: Int) -> Color {
 private struct ClinicalNoteCardView: View {
     @Bindable var note: ClinicalNote
     let onDelete: () -> Void
+    let onEditingStateChange: (UUID, Bool) -> Void
 
     @State private var isEditing = false
     @State private var draftContent = ""
@@ -82,10 +83,12 @@ private struct ClinicalNoteCardView: View {
                         }
                         note.updatedAt = .now
                         isEditing = false
+                        onEditingStateChange(note.id, false)
                     } else {
                         draftContent = note.content
                         draftWellbeing = note.wellbeingScore
                         isEditing = true
+                        onEditingStateChange(note.id, true)
                     }
                 }
                 .help(isEditing ? "Conferma modifica" : "Modifica nota")
@@ -140,6 +143,7 @@ private struct ClinicalNoteCardView: View {
                             draftContent = note.content
                             draftWellbeing = note.wellbeingScore
                             isEditing = false
+                            onEditingStateChange(note.id, false)
                         }
 
                         Button("Salva") {
@@ -149,6 +153,7 @@ private struct ClinicalNoteCardView: View {
                             }
                             note.updatedAt = .now
                             isEditing = false
+                            onEditingStateChange(note.id, false)
                         }
                         .buttonStyle(.borderedProminent)
                     }
@@ -273,6 +278,7 @@ private struct ClinicalTimelineView: View {
     let onGoToNewerPage: () -> Void
     let onGoToOlderPage: () -> Void
     let onDelete: (ClinicalNote) -> Void
+    let onEditingStateChange: (UUID, Bool) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -313,6 +319,8 @@ private struct ClinicalTimelineView: View {
                     ForEach(notes) { note in
                         ClinicalNoteCardView(note: note) {
                             onDelete(note)
+                        } onEditingStateChange: { noteID, isEditing in
+                            onEditingStateChange(noteID, isEditing)
                         }
                     }
                 }
@@ -340,8 +348,14 @@ struct ClinicalUpdatesSectionView: View {
     @State private var notesPageOffset = 0
     @State private var timelineNotes: [ClinicalNote] = []
     @State private var totalNotesCount = 0
+    @State private var editingNoteIDs: Set<UUID> = []
+
+    let onDraftStateChange: (Bool) -> Void
 
     private let notesPageSize = 5
+    private var hasUnsavedDrafts: Bool {
+        !newNoteContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !editingNoteIDs.isEmpty
+    }
 
     private var canGoToOlderNotesPage: Bool {
         notesPageOffset + notesPageSize < totalNotesCount
@@ -395,6 +409,10 @@ struct ClinicalUpdatesSectionView: View {
             notesPageOffset = 0
             timelineNotes = []
         }
+
+        let visibleIDs = Set(timelineNotes.map(\.id))
+        editingNoteIDs = editingNoteIDs.intersection(visibleIDs)
+        onDraftStateChange(hasUnsavedDrafts)
     }
 
     private func saveNewNote() {
@@ -410,6 +428,7 @@ struct ClinicalUpdatesSectionView: View {
         newNoteWellbeing = 5
         notesPageOffset = 0
         refreshTimelineNotes()
+        onDraftStateChange(hasUnsavedDrafts)
     }
 
     private func deleteNote(_ note: ClinicalNote) {
@@ -447,22 +466,43 @@ struct ClinicalUpdatesSectionView: View {
                     canGoToOlderPage: canGoToOlderNotesPage,
                     onGoToNewerPage: goToNewerNotesPage,
                     onGoToOlderPage: goToOlderNotesPage,
-                    onDelete: deleteNote
+                    onDelete: deleteNote,
+                    onEditingStateChange: { noteID, isEditing in
+                        if isEditing {
+                            editingNoteIDs.insert(noteID)
+                        } else {
+                            editingNoteIDs.remove(noteID)
+                        }
+                        onDraftStateChange(hasUnsavedDrafts)
+                    }
                 )
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .onAppear {
             notesPageOffset = 0
+            editingNoteIDs.removeAll()
             refreshTimelineNotes()
+            onDraftStateChange(hasUnsavedDrafts)
         }
         .onChange(of: patient.id) { _, _ in
             notesPageOffset = 0
+            editingNoteIDs.removeAll()
+            newNoteContent = ""
+            newNoteWellbeing = 5
             refreshTimelineNotes()
+            onDraftStateChange(hasUnsavedDrafts)
         }
         .onChange(of: patient.clinicalNotes.count) { _, _ in
             notesPageOffset = 0
             refreshTimelineNotes()
+            onDraftStateChange(hasUnsavedDrafts)
+        }
+        .onChange(of: newNoteContent) { _, _ in
+            onDraftStateChange(hasUnsavedDrafts)
+        }
+        .onDisappear {
+            onDraftStateChange(false)
         }
     }
 }

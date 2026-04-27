@@ -102,8 +102,38 @@ private struct OrganFunctionsSummaryView: View {
 }
 
 private struct TherapyMedicationRow: View {
+    private enum FocusField: Hashable {
+        case medication
+        case dosage
+    }
+
     @Binding var item: TherapyDraftItem
     let onDelete: () -> Void
+    @State private var medicationSuggestions: [String] = []
+    @State private var dosageSuggestions: [String] = []
+    @FocusState private var focusedField: FocusField?
+
+    private var shouldShowMedicationSuggestions: Bool {
+        focusedField == .medication &&
+        item.medicationName.trimmingCharacters(in: .whitespacesAndNewlines).count >= 2 &&
+        !medicationSuggestions.isEmpty
+    }
+
+    private var shouldShowDosageSuggestions: Bool {
+        focusedField == .dosage &&
+        !dosageSuggestions.isEmpty
+    }
+
+    private func refreshMedicationSuggestions() {
+        medicationSuggestions = ActiveIngredientAutocomplete.shared.suggestions(for: item.medicationName)
+    }
+
+    private func refreshDosageSuggestions() {
+        dosageSuggestions = ActiveIngredientAutocomplete.shared.formulationSuggestions(
+            for: item.medicationName,
+            formulationQuery: item.dosage
+        )
+    }
 
     @ViewBuilder
     private func actionIconButton(symbol: String, isDestructive: Bool = false, action: @escaping () -> Void) -> some View {
@@ -127,12 +157,103 @@ private struct TherapyMedicationRow: View {
     }
 
     var body: some View {
-        HStack {
-            TextField("Farmaco", text: $item.medicationName)
-            TextField("Dosaggio", text: $item.dosage)
-            TextField("Posologia", text: $item.posology)
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 4) {
+                    TextField("Farmaco", text: $item.medicationName)
+                        .focused($focusedField, equals: .medication)
+                        .onChange(of: item.medicationName) { _, _ in
+                            refreshMedicationSuggestions()
+                            if focusedField == .dosage {
+                                refreshDosageSuggestions()
+                            }
+                        }
+                        .onChange(of: focusedField) { _, field in
+                            if field == .medication {
+                                refreshMedicationSuggestions()
+                            } else if field != .dosage {
+                                medicationSuggestions = []
+                            }
 
-            actionIconButton(symbol: "trash", isDestructive: true, action: onDelete)
+                            if field == .dosage {
+                                refreshDosageSuggestions()
+                            } else if field != .medication {
+                                dosageSuggestions = []
+                            }
+                        }
+                        .onSubmit {
+                            medicationSuggestions = []
+                        }
+
+                    if shouldShowMedicationSuggestions {
+                        ScrollView {
+                            LazyVStack(alignment: .leading, spacing: 2) {
+                                ForEach(medicationSuggestions, id: \.self) { suggestion in
+                                    Button {
+                                        item.medicationName = suggestion
+                                        medicationSuggestions = []
+                                        focusedField = .dosage
+                                        refreshDosageSuggestions()
+                                    } label: {
+                                        Text(suggestion)
+                                            .font(.caption)
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                }
+                            }
+                        }
+                        .frame(maxHeight: 140)
+                        .padding(6)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(Color(nsColor: .controlBackgroundColor))
+                        )
+                    }
+                }
+
+                VStack(alignment: .leading, spacing: 4) {
+                    TextField("Dosaggio", text: $item.dosage)
+                        .focused($focusedField, equals: .dosage)
+                        .onChange(of: item.dosage) { _, _ in
+                            refreshDosageSuggestions()
+                        }
+                        .onSubmit {
+                            dosageSuggestions = []
+                        }
+
+                    if shouldShowDosageSuggestions {
+                        ScrollView {
+                            LazyVStack(alignment: .leading, spacing: 2) {
+                                ForEach(dosageSuggestions, id: \.self) { suggestion in
+                                    Button {
+                                        item.dosage = suggestion
+                                        dosageSuggestions = []
+                                    } label: {
+                                        Text(suggestion)
+                                            .font(.caption)
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                    }
+                                    .buttonStyle(.plain)
+                                    .padding(.horizontal, 8)
+                                    .padding(.vertical, 4)
+                                }
+                            }
+                        }
+                        .frame(maxHeight: 140)
+                        .padding(6)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(Color(nsColor: .controlBackgroundColor))
+                        )
+                    }
+                }
+                TextField("Posologia", text: $item.posology)
+
+                actionIconButton(symbol: "trash", isDestructive: true, action: onDelete)
+            }
         }
         .textFieldStyle(.roundedBorder)
         .padding(10)
@@ -148,6 +269,8 @@ struct PatientClinicalWindowView: View {
 
     @Bindable var patient: Patient
     @State private var therapyDraft: [TherapyDraftItem] = []
+    @State private var hasUnsavedClinicalDrafts = false
+    @State private var hasUnsavedBloodTestsDrafts = false
 
     private var heartStatusBinding: Binding<String> {
         Binding(
@@ -220,6 +343,14 @@ struct PatientClinicalWindowView: View {
 
     private var hasUnsavedTherapyChanges: Bool {
         normalizedRows(from: therapyDraft) != normalizedRows(from: persistedRows)
+    }
+
+    private var hasUnsavedChangesInWindow: Bool {
+        hasUnsavedTherapyChanges || hasUnsavedClinicalDrafts || hasUnsavedBloodTestsDrafts
+    }
+
+    private func updateUnsavedWindowState() {
+        PatientWindowUnsavedStateStore.shared.set(hasUnsavedChangesInWindow, for: patient.id)
     }
 
     private func loadTherapyDraft() {
@@ -467,7 +598,15 @@ struct PatientClinicalWindowView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
 
-                ClinicalUpdatesSectionView(patient: patient)
+                ClinicalUpdatesSectionView(patient: patient) { hasUnsavedDrafts in
+                    hasUnsavedClinicalDrafts = hasUnsavedDrafts
+                    updateUnsavedWindowState()
+                }
+
+                BloodTestsSectionView(patient: patient) { hasUnsavedDrafts in
+                    hasUnsavedBloodTestsDrafts = hasUnsavedDrafts
+                    updateUnsavedWindowState()
+                }
             }
             .padding(24)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -479,9 +618,25 @@ struct PatientClinicalWindowView: View {
             if patient.liverFunctionStatus == nil { patient.liverFunctionStatus = "green" }
             if patient.kidneyFunctionStatus == nil { patient.kidneyFunctionStatus = "green" }
             loadTherapyDraft()
+            updateUnsavedWindowState()
         }
         .onChange(of: patient.id) { _, _ in
             loadTherapyDraft()
+            hasUnsavedClinicalDrafts = false
+            hasUnsavedBloodTestsDrafts = false
+            updateUnsavedWindowState()
+        }
+        .onChange(of: hasUnsavedTherapyChanges) { _, _ in
+            updateUnsavedWindowState()
+        }
+        .onChange(of: hasUnsavedClinicalDrafts) { _, _ in
+            updateUnsavedWindowState()
+        }
+        .onChange(of: hasUnsavedBloodTestsDrafts) { _, _ in
+            updateUnsavedWindowState()
+        }
+        .onDisappear {
+            PatientWindowUnsavedStateStore.shared.clear(for: patient.id)
         }
     }
 }
