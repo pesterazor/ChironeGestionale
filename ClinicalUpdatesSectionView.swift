@@ -43,8 +43,14 @@ private struct ClinicalNoteCardView: View {
         .buttonStyle(.plain)
     }
 
-    private var isAutomaticTherapyUpdate: Bool {
-        note.content.hasPrefix("Aggiornamento terapia farmacologica:")
+    private var isAutomaticSystemUpdate: Bool {
+        note.readableContent.hasPrefix("Aggiornamento terapia farmacologica:") ||
+        note.readableContent.hasPrefix("Richiesti esami ematochimici:") ||
+        note.readableContent.hasPrefix("Presa visione esami ematochimici:")
+    }
+
+    private var shouldShowWellbeing: Bool {
+        !isAutomaticSystemUpdate && note.wellbeingScore > 0
     }
 
     var body: some View {
@@ -62,7 +68,7 @@ private struct ClinicalNoteCardView: View {
                         .foregroundStyle(.secondary)
                 }
 
-                if !isAutomaticTherapyUpdate {
+                if shouldShowWellbeing {
                     Text("Benessere percepito: \(note.wellbeingScore)/10")
                         .font(.caption)
                         .fontWeight(.semibold)
@@ -77,15 +83,15 @@ private struct ClinicalNoteCardView: View {
 
                 actionIconButton(symbol: isEditing ? "checkmark.circle" : "pencil") {
                     if isEditing {
-                        note.content = draftContent
-                        if !isAutomaticTherapyUpdate {
+                        note.protectContent(draftContent)
+                        if !isAutomaticSystemUpdate {
                             note.wellbeingScore = draftWellbeing
                         }
                         note.updatedAt = .now
                         isEditing = false
                         onEditingStateChange(note.id, false)
                     } else {
-                        draftContent = note.content
+                        draftContent = note.readableContent
                         draftWellbeing = note.wellbeingScore
                         isEditing = true
                         onEditingStateChange(note.id, true)
@@ -128,7 +134,7 @@ private struct ClinicalNoteCardView: View {
                             .strokeBorder(Color.secondary.opacity(0.25))
                     )
 
-                    if !isAutomaticTherapyUpdate {
+                    if !isAutomaticSystemUpdate {
                         VStack(alignment: .leading, spacing: 8) {
                             Text("Benessere percepito: \(draftWellbeing)/10")
                                 .font(.subheadline)
@@ -140,15 +146,15 @@ private struct ClinicalNoteCardView: View {
 
                     HStack {
                         Button("Annulla") {
-                            draftContent = note.content
+                            draftContent = note.readableContent
                             draftWellbeing = note.wellbeingScore
                             isEditing = false
                             onEditingStateChange(note.id, false)
                         }
 
                         Button("Salva") {
-                            note.content = draftContent
-                            if !isAutomaticTherapyUpdate {
+                            note.protectContent(draftContent)
+                            if !isAutomaticSystemUpdate {
                                 note.wellbeingScore = draftWellbeing
                             }
                             note.updatedAt = .now
@@ -159,7 +165,7 @@ private struct ClinicalNoteCardView: View {
                     }
                 }
             } else {
-                Text(note.content.isEmpty ? "Nessun contenuto" : note.content)
+                Text(note.readableContent.isEmpty ? "Nessun contenuto" : note.readableContent)
                     .textSelection(.enabled)
                     .font(.body)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -264,6 +270,7 @@ private struct NewClinicalNoteComposerView: View {
             }
             .buttonStyle(.borderedProminent)
             .padding(.horizontal, 12)
+            .padding(.vertical, 6)
             .disabled(content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
     }
@@ -417,10 +424,11 @@ struct ClinicalUpdatesSectionView: View {
 
     private func saveNewNote() {
         let note = ClinicalNote(
-            content: newNoteContent.trimmingCharacters(in: .whitespacesAndNewlines),
+            content: "",
             wellbeingScore: newNoteWellbeing,
             patient: patient
         )
+        note.protectContent(newNoteContent.trimmingCharacters(in: .whitespacesAndNewlines))
         modelContext.insert(note)
         patient.clinicalNotes.append(note)
         patient.updatedAt = .now

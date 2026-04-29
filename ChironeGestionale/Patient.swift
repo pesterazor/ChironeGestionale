@@ -35,11 +35,16 @@ final class Patient {
     var referenceCSM: String
     var referringClinician: String
     var primaryDiagnosis: String
+    var encryptedPrimaryDiagnosis: String?
     var secondaryDiagnosis: String
+    var encryptedSecondaryDiagnosis: String?
     var medicalHistory: String
     var medicalComorbidities: String?
+    var encryptedMedicalComorbidities: String?
     var remotePsychiatricHistory: String?
+    var encryptedRemotePsychiatricHistory: String?
     var allergies: String
+    var encryptedAllergies: String?
     var exemptions: String
 
     // MARK: - Terapia attuale (testuale legacy per MVP)
@@ -84,11 +89,16 @@ final class Patient {
         referenceCSM: String = "",
         referringClinician: String = "",
         primaryDiagnosis: String = "",
+        encryptedPrimaryDiagnosis: String? = nil,
         secondaryDiagnosis: String = "",
+        encryptedSecondaryDiagnosis: String? = nil,
         medicalHistory: String = "",
         medicalComorbidities: String? = nil,
+        encryptedMedicalComorbidities: String? = nil,
         remotePsychiatricHistory: String? = nil,
+        encryptedRemotePsychiatricHistory: String? = nil,
         allergies: String = "",
+        encryptedAllergies: String? = nil,
         exemptions: String = "",
         currentTherapySummary: String = "",
         heartFunctionStatus: String? = nil,
@@ -119,11 +129,16 @@ final class Patient {
         self.referenceCSM = referenceCSM
         self.referringClinician = referringClinician
         self.primaryDiagnosis = primaryDiagnosis
+        self.encryptedPrimaryDiagnosis = encryptedPrimaryDiagnosis
         self.secondaryDiagnosis = secondaryDiagnosis
+        self.encryptedSecondaryDiagnosis = encryptedSecondaryDiagnosis
         self.medicalHistory = medicalHistory
         self.medicalComorbidities = medicalComorbidities
+        self.encryptedMedicalComorbidities = encryptedMedicalComorbidities
         self.remotePsychiatricHistory = remotePsychiatricHistory
+        self.encryptedRemotePsychiatricHistory = encryptedRemotePsychiatricHistory
         self.allergies = allergies
+        self.encryptedAllergies = encryptedAllergies
         self.exemptions = exemptions
         self.currentTherapySummary = currentTherapySummary
         self.heartFunctionStatus = heartFunctionStatus
@@ -159,6 +174,23 @@ extension Patient {
         return "Nuovo paziente"
     }
 
+    var ageInYears: Int? {
+        guard let dateOfBirth else { return nil }
+        let years = Calendar.current.dateComponents([.year], from: dateOfBirth, to: .now).year ?? 0
+        return max(0, years)
+    }
+
+    var clinicalWindowTitle: String {
+        let namePart = "\(lastName.localizedUppercase) \(firstName.localizedUppercase)"
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let resolvedName = namePart.isEmpty ? "NUOVO PAZIENTE" : namePart
+
+        if let ageInYears {
+            return "Scheda Clinica: \(resolvedName) (\(ageInYears) anni)"
+        }
+        return "Scheda Clinica: \(resolvedName)"
+    }
+
     var searchableTokens: [String] {
         [
             firstName,
@@ -187,5 +219,100 @@ extension Patient {
     var lastVisitDateLabel: String? {
         guard let lastVisitDate else { return nil }
         return lastVisitDate.formatted(Self.italianShortDateStyle).lowercased()
+    }
+
+    private func decrypted(_ encrypted: String?, fallback: String) -> String {
+        if let decrypted = SecureDataCipher.shared.decrypt(encrypted) {
+            return decrypted
+        }
+        return fallback
+    }
+
+    private func encryptedValue(_ plaintext: String) -> String? {
+        SecureDataCipher.shared.encrypt(plaintext)
+    }
+
+    var readablePrimaryDiagnosis: String {
+        decrypted(encryptedPrimaryDiagnosis, fallback: primaryDiagnosis)
+    }
+
+    func protectPrimaryDiagnosis(_ value: String) {
+        if let encrypted = encryptedValue(value) {
+            encryptedPrimaryDiagnosis = encrypted
+            primaryDiagnosis = ""
+        } else {
+            encryptedPrimaryDiagnosis = nil
+            primaryDiagnosis = value
+        }
+    }
+
+    var readableSecondaryDiagnosis: String {
+        decrypted(encryptedSecondaryDiagnosis, fallback: secondaryDiagnosis)
+    }
+
+    func protectSecondaryDiagnosis(_ value: String) {
+        if let encrypted = encryptedValue(value) {
+            encryptedSecondaryDiagnosis = encrypted
+            secondaryDiagnosis = ""
+        } else {
+            encryptedSecondaryDiagnosis = nil
+            secondaryDiagnosis = value
+        }
+    }
+
+    var readableMedicalComorbidities: String {
+        decrypted(encryptedMedicalComorbidities, fallback: medicalComorbidities ?? "")
+    }
+
+    func protectMedicalComorbidities(_ value: String) {
+        let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else {
+            encryptedMedicalComorbidities = nil
+            medicalComorbidities = nil
+            return
+        }
+
+        if let encrypted = encryptedValue(value) {
+            encryptedMedicalComorbidities = encrypted
+            medicalComorbidities = nil
+        } else {
+            encryptedMedicalComorbidities = nil
+            medicalComorbidities = value.isEmpty ? nil : value
+        }
+    }
+
+    var readableRemotePsychiatricHistory: String {
+        decrypted(encryptedRemotePsychiatricHistory, fallback: remotePsychiatricHistory ?? "")
+    }
+
+    func protectRemotePsychiatricHistory(_ value: String) {
+        let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !normalized.isEmpty else {
+            encryptedRemotePsychiatricHistory = nil
+            remotePsychiatricHistory = nil
+            return
+        }
+
+        if let encrypted = encryptedValue(value) {
+            encryptedRemotePsychiatricHistory = encrypted
+            remotePsychiatricHistory = nil
+        } else {
+            encryptedRemotePsychiatricHistory = nil
+            remotePsychiatricHistory = value.isEmpty ? nil : value
+        }
+    }
+
+    var readableAllergies: String {
+        decrypted(encryptedAllergies, fallback: allergies)
+    }
+
+    func protectAllergies(_ value: String) {
+        if let encrypted = encryptedValue(value) {
+            encryptedAllergies = encrypted
+            allergies = ""
+        } else {
+            encryptedAllergies = nil
+            allergies = value
+        }
     }
 }

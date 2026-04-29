@@ -101,6 +101,7 @@ private struct OrganFunctionsSummaryView: View {
     }
 }
 
+
 private struct TherapyMedicationRow: View {
     private enum FocusField: Hashable {
         case medication
@@ -108,6 +109,8 @@ private struct TherapyMedicationRow: View {
     }
 
     @Binding var item: TherapyDraftItem
+    let shouldAutoFocusMedication: Bool
+    let onMedicationAutofocused: () -> Void
     let onDelete: () -> Void
     @State private var medicationSuggestions: [String] = []
     @State private var dosageSuggestions: [String] = []
@@ -154,6 +157,14 @@ private struct TherapyMedicationRow: View {
                 )
         }
         .buttonStyle(.plain)
+    }
+
+    private func triggerAutoFocusIfNeeded() {
+        guard shouldAutoFocusMedication else { return }
+        DispatchQueue.main.async {
+            focusedField = .medication
+            onMedicationAutofocused()
+        }
     }
 
     var body: some View {
@@ -257,6 +268,10 @@ private struct TherapyMedicationRow: View {
         }
         .textFieldStyle(.roundedBorder)
         .padding(10)
+        .onAppear(perform: triggerAutoFocusIfNeeded)
+        .onChange(of: shouldAutoFocusMedication) { _, _ in
+            triggerAutoFocusIfNeeded()
+        }
         .background(
             RoundedRectangle(cornerRadius: 8)
                 .fill(Color(nsColor: .controlBackgroundColor))
@@ -269,6 +284,7 @@ struct PatientClinicalWindowView: View {
 
     @Bindable var patient: Patient
     @State private var therapyDraft: [TherapyDraftItem] = []
+    @State private var pendingTherapyMedicationFocusID: UUID?
     @State private var hasUnsavedClinicalDrafts = false
     @State private var hasUnsavedBloodTestsDrafts = false
 
@@ -355,6 +371,7 @@ struct PatientClinicalWindowView: View {
 
     private func loadTherapyDraft() {
         therapyDraft = persistedRows
+        pendingTherapyMedicationFocusID = nil
     }
 
     private func formatTherapyLine(name: String, dosage: String, posology: String) -> String {
@@ -405,6 +422,20 @@ struct PatientClinicalWindowView: View {
         return "Aggiornamento terapia farmacologica:\n\(bulletList)"
     }
 
+    private func appendAutomaticClinicalNote(content: String) {
+        let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        let note = ClinicalNote(
+            content: "",
+            wellbeingScore: 0,
+            patient: patient
+        )
+        note.protectContent(trimmed)
+        modelContext.insert(note)
+        patient.clinicalNotes.append(note)
+    }
+
     private func saveTherapyDraft() {
         guard hasUnsavedTherapyChanges else { return }
 
@@ -452,13 +483,7 @@ struct PatientClinicalWindowView: View {
         patient.currentTherapySummary = therapySummaryText(from: updatedTherapyItems)
         patient.updatedAt = .now
 
-        let therapyNote = ClinicalNote(
-            content: therapyChangeNoteText(from: updatedTherapyItems),
-            wellbeingScore: 0,
-            patient: patient
-        )
-        modelContext.insert(therapyNote)
-        patient.clinicalNotes.append(therapyNote)
+        appendAutomaticClinicalNote(content: therapyChangeNoteText(from: updatedTherapyItems))
 
         loadTherapyDraft()
     }
@@ -472,8 +497,8 @@ struct PatientClinicalWindowView: View {
                             .font(.largeTitle)
                             .fontWeight(.semibold)
 
-                        if !patient.primaryDiagnosis.isEmpty {
-                            Label(patient.primaryDiagnosis, systemImage: "cross.case")
+                        if !patient.readablePrimaryDiagnosis.isEmpty {
+                            Label(patient.readablePrimaryDiagnosis, systemImage: "cross.case")
                                 .foregroundStyle(.secondary)
                         }
                     }
@@ -494,13 +519,27 @@ struct PatientClinicalWindowView: View {
                         HStack(alignment: .top, spacing: 12) {
                             VStack(alignment: .leading, spacing: 6) {
                                 clinicalTitle("Diagnosi principale")
-                                TextField("", text: $patient.primaryDiagnosis, prompt: Text("Diagnosi principale"))
+                                TextField(
+                                    "",
+                                    text: Binding(
+                                        get: { patient.readablePrimaryDiagnosis },
+                                        set: { patient.protectPrimaryDiagnosis($0) }
+                                    ),
+                                    prompt: Text("Diagnosi principale")
+                                )
                             }
                             .frame(maxWidth: .infinity)
 
                             VStack(alignment: .leading, spacing: 6) {
                                 clinicalTitle("Diagnosi secondaria")
-                                TextField("", text: $patient.secondaryDiagnosis, prompt: Text("Diagnosi secondaria"))
+                                TextField(
+                                    "",
+                                    text: Binding(
+                                        get: { patient.readableSecondaryDiagnosis },
+                                        set: { patient.protectSecondaryDiagnosis($0) }
+                                    ),
+                                    prompt: Text("Diagnosi secondaria")
+                                )
                             }
                             .frame(maxWidth: .infinity)
                         }
@@ -508,7 +547,14 @@ struct PatientClinicalWindowView: View {
                         HStack(alignment: .top, spacing: 12) {
                             VStack(alignment: .leading, spacing: 6) {
                                 clinicalTitle("Allergie")
-                                TextField("", text: $patient.allergies, prompt: Text("Allergie"))
+                                TextField(
+                                    "",
+                                    text: Binding(
+                                        get: { patient.readableAllergies },
+                                        set: { patient.protectAllergies($0) }
+                                    ),
+                                    prompt: Text("Allergie")
+                                )
                             }
                             .frame(maxWidth: .infinity)
                         }
@@ -520,8 +566,8 @@ struct PatientClinicalWindowView: View {
                                     .fill(Color(nsColor: .textBackgroundColor))
 
                                 TextEditor(text: Binding(
-                                    get: { patient.medicalComorbidities ?? "" },
-                                    set: { patient.medicalComorbidities = $0.isEmpty ? nil : $0 }
+                                    get: { patient.readableMedicalComorbidities },
+                                    set: { patient.protectMedicalComorbidities($0) }
                                 ))
                                 .font(.body)
                                 .scrollContentBackground(.hidden)
@@ -542,8 +588,8 @@ struct PatientClinicalWindowView: View {
                                     .fill(Color(nsColor: .textBackgroundColor))
 
                                 TextEditor(text: Binding(
-                                    get: { patient.remotePsychiatricHistory ?? "" },
-                                    set: { patient.remotePsychiatricHistory = $0.isEmpty ? nil : $0 }
+                                    get: { patient.readableRemotePsychiatricHistory },
+                                    set: { patient.protectRemotePsychiatricHistory($0) }
                                 ))
                                 .font(.body)
                                 .scrollContentBackground(.hidden)
@@ -563,27 +609,40 @@ struct PatientClinicalWindowView: View {
                     .onChange(of: patient.allergies) { _, _ in patient.updatedAt = .now }
                     .onChange(of: patient.medicalComorbidities) { _, _ in patient.updatedAt = .now }
                     .onChange(of: patient.remotePsychiatricHistory) { _, _ in patient.updatedAt = .now }
+                    .onChange(of: patient.encryptedPrimaryDiagnosis) { _, _ in patient.updatedAt = .now }
+                    .onChange(of: patient.encryptedSecondaryDiagnosis) { _, _ in patient.updatedAt = .now }
+                    .onChange(of: patient.encryptedAllergies) { _, _ in patient.updatedAt = .now }
+                    .onChange(of: patient.encryptedMedicalComorbidities) { _, _ in patient.updatedAt = .now }
+                    .onChange(of: patient.encryptedRemotePsychiatricHistory) { _, _ in patient.updatedAt = .now }
                 }
 
                 GroupBox("Terapia attuale") {
                     VStack(alignment: .leading, spacing: 10) {
                         ForEach($therapyDraft) { $item in
-                            TherapyMedicationRow(item: $item) {
+                            TherapyMedicationRow(
+                                item: $item,
+                                shouldAutoFocusMedication: pendingTherapyMedicationFocusID == item.id,
+                                onMedicationAutofocused: {
+                                    if pendingTherapyMedicationFocusID == item.id {
+                                        pendingTherapyMedicationFocusID = nil
+                                    }
+                                }
+                            ) {
                                 therapyDraft.removeAll { $0.id == item.id }
                             }
                         }
 
                         HStack(spacing: 10) {
                             Button {
-                                therapyDraft.append(
-                                    TherapyDraftItem(
-                                        id: UUID(),
-                                        sourceID: nil,
-                                        medicationName: "",
-                                        dosage: "",
-                                        posology: ""
-                                    )
+                                let newItem = TherapyDraftItem(
+                                    id: UUID(),
+                                    sourceID: nil,
+                                    medicationName: "",
+                                    dosage: "",
+                                    posology: ""
                                 )
+                                therapyDraft.append(newItem)
+                                pendingTherapyMedicationFocusID = newItem.id
                             } label: {
                                 Label("Aggiungi farmaco", systemImage: "plus")
                             }
@@ -603,10 +662,16 @@ struct PatientClinicalWindowView: View {
                     updateUnsavedWindowState()
                 }
 
-                BloodTestsSectionView(patient: patient) { hasUnsavedDrafts in
-                    hasUnsavedBloodTestsDrafts = hasUnsavedDrafts
-                    updateUnsavedWindowState()
-                }
+                BloodTestsSectionView(
+                    patient: patient,
+                    onDraftStateChange: { hasUnsavedDrafts in
+                        hasUnsavedBloodTestsDrafts = hasUnsavedDrafts
+                        updateUnsavedWindowState()
+                    },
+                    onAutoClinicalUpdate: { noteText in
+                        appendAutomaticClinicalNote(content: noteText)
+                    }
+                )
             }
             .padding(24)
             .frame(maxWidth: .infinity, alignment: .leading)

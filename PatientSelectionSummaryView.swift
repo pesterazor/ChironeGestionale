@@ -119,8 +119,8 @@ struct PatientSelectionSummaryView: View {
                             .font(.title2)
                             .fontWeight(.semibold)
 
-                        if !patient.primaryDiagnosis.isEmpty {
-                            Label(patient.primaryDiagnosis, systemImage: "cross.case")
+                        if !patient.readablePrimaryDiagnosis.isEmpty {
+                            Label(patient.readablePrimaryDiagnosis, systemImage: "cross.case")
                                 .font(.subheadline)
                                 .foregroundStyle(.secondary)
                         }
@@ -376,15 +376,31 @@ struct PatientSelectionSummaryView: View {
                         HStack(alignment: .top, spacing: 12) {
                             VStack(alignment: .leading, spacing: 6) {
                                 demographicTitle("Diagnosi principale")
-                                TextField("", text: $patient.primaryDiagnosis, prompt: Text("Diagnosi principale"))
-                                    .onChange(of: patient.primaryDiagnosis) { _, _ in patient.updatedAt = .now }
+                                TextField(
+                                    "",
+                                    text: Binding(
+                                        get: { patient.readablePrimaryDiagnosis },
+                                        set: { patient.protectPrimaryDiagnosis($0) }
+                                    ),
+                                    prompt: Text("Diagnosi principale")
+                                )
+                                .onChange(of: patient.primaryDiagnosis) { _, _ in patient.updatedAt = .now }
+                                .onChange(of: patient.encryptedPrimaryDiagnosis) { _, _ in patient.updatedAt = .now }
                             }
                             .frame(maxWidth: .infinity)
 
                             VStack(alignment: .leading, spacing: 6) {
                                 demographicTitle("Diagnosi secondaria")
-                                TextField("", text: $patient.secondaryDiagnosis, prompt: Text("Diagnosi secondaria"))
-                                    .onChange(of: patient.secondaryDiagnosis) { _, _ in patient.updatedAt = .now }
+                                TextField(
+                                    "",
+                                    text: Binding(
+                                        get: { patient.readableSecondaryDiagnosis },
+                                        set: { patient.protectSecondaryDiagnosis($0) }
+                                    ),
+                                    prompt: Text("Diagnosi secondaria")
+                                )
+                                .onChange(of: patient.secondaryDiagnosis) { _, _ in patient.updatedAt = .now }
+                                .onChange(of: patient.encryptedSecondaryDiagnosis) { _, _ in patient.updatedAt = .now }
                             }
                             .frame(maxWidth: .infinity)
                         }

@@ -40,6 +40,7 @@ enum BloodTestsDefaults {
         "CK (CPK)",
         "Prolattina (Prl)",
         "Bilirubina totale",
+        "Trigliceridi",
         "Colesterolo totale",
         "HDL",
         "LDL",

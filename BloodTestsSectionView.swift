@@ -4,6 +4,7 @@ import Foundation
 struct BloodTestsSectionView: View {
     @Bindable var patient: Patient
     let onDraftStateChange: (Bool) -> Void
+    let onAutoClinicalUpdate: ((String) -> Void)?
 
     @State private var draft = BloodTestsTablePayload.empty
     @State private var persistedDraft = BloodTestsTablePayload.empty
@@ -225,6 +226,13 @@ private extension BloodTestsSectionView {
             } else {
                 draft.rows[rowIndex].values[key] = trimmed
             }
+
+            BloodTestsSectionViewModel.applyDerivedCalculations(
+                to: &draft,
+                forColumnID: columnID,
+                patientDateOfBirth: patient.dateOfBirth,
+                patientGender: patient.gender
+            )
         }
     }
 
@@ -269,15 +277,22 @@ private extension BloodTestsSectionView {
     func loadFromPatient() {
         let decoded = BloodTestsSectionViewModel.decodePayload(from: patient.bloodTestsTableJSON)
         draft = BloodTestsSectionViewModel.normalizePayload(decoded)
+        recalculateDerivedValuesForAllColumns()
         persistedDraft = draft
     }
 
     func saveDraft() {
+        let previous = persistedDraft
+        recalculateDerivedValuesForAllColumns()
         let normalized = BloodTestsSectionViewModel.normalizePayload(draft)
         draft = normalized
         persistedDraft = normalized
         patient.bloodTestsTableJSON = BloodTestsSectionViewModel.encodePayload(normalized)
         patient.updatedAt = .now
+
+        if let noteText = BloodTestsSectionViewModel.bloodTestsRequestNoteText(from: previous, to: normalized) {
+            onAutoClinicalUpdate?(noteText)
+        }
     }
 
     func dateText(from date: Date) -> String {
@@ -330,6 +345,17 @@ private extension BloodTestsSectionView {
 
     func removeRow(rowID: UUID) {
         draft.rows.removeAll { $0.id == rowID }
+    }
+
+    func recalculateDerivedValuesForAllColumns() {
+        for column in draft.columns {
+            BloodTestsSectionViewModel.applyDerivedCalculations(
+                to: &draft,
+                forColumnID: column.id,
+                patientDateOfBirth: patient.dateOfBirth,
+                patientGender: patient.gender
+            )
+        }
     }
 
 }

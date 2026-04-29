@@ -12,11 +12,21 @@
 		0E87E5992F9F929000D79721 /* BloodTestsModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E87E5982F9F929000D79721 /* BloodTestsModels.swift */; };
 		0E87E59B2F9F93D700D79721 /* BloodTestsAppKitTableView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E87E59A2F9F93D700D79721 /* BloodTestsAppKitTableView.swift */; };
 		0E87E59D2F9F9E3900D79721 /* BloodTestsSectionViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E87E59C2F9F9E3900D79721 /* BloodTestsSectionViewModel.swift */; };
+		0E87E59F2F9FF09800D79721 /* BloodTestCalculators.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E87E59E2F9FF09800D79721 /* BloodTestCalculators.swift */; };
+		0E87E5B52FA1299100D79721 /* SecureDataCipher.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E87E5B42FA1299100D79721 /* SecureDataCipher.swift */; };
+		0E87E5B72FA1299100D79721 /* AppLockViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E87E5B62FA1299100D79721 /* AppLockViewModel.swift */; };
+		0E87E5B92FA1299200D79721 /* AppLockGateView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E87E5B82FA1299200D79721 /* AppLockGateView.swift */; };
+		0E87E5BB2FA1310700D79721 /* EncryptedBackupDesign.md in Resources */ = {isa = PBXBuildFile; fileRef = 0E87E5BA2FA1310700D79721 /* EncryptedBackupDesign.md */; };
+		0E87E5BD2FA1326B00D79721 /* EncryptedBackupService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E87E5BC2FA1326B00D79721 /* EncryptedBackupService.swift */; };
+		0E87E5BF2FA136F500D79721 /* BackupUIService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E87E5BE2FA136F500D79721 /* BackupUIService.swift */; };
+		0E87E5D52FA1488C00D79721 /* GDPR_Roadmap.md in Resources */ = {isa = PBXBuildFile; fileRef = 0E87E5D42FA1488C00D79721 /* GDPR_Roadmap.md */; };
+		0E87E5D72FA14E7A00D79721 /* PatientReportService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E87E5D62FA14E7A00D79721 /* PatientReportService.swift */; };
 		0EB9AC612F980D6D00044B4B /* ClinicalNote.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0EB9AC602F980D6D00044B4B /* ClinicalNote.swift */; };
 		0EB9AC632F980D7500044B4B /* TherapyMedication.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0EB9AC622F980D7500044B4B /* TherapyMedication.swift */; };
 		0EB9AC652F98140E00044B4B /* ItalianTaxCode.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0EB9AC642F98140E00044B4B /* ItalianTaxCode.swift */; };
 		0ED439382F9E93EF003124BC /* PatientWindowUnsavedStateStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0ED439372F9E93EF003124BC /* PatientWindowUnsavedStateStore.swift */; };
 		0ED4393A2F9E9A5A003124BC /* BloodTestsSectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0ED439392F9E9A5A003124BC /* BloodTestsSectionView.swift */; };
+		0EDE0B2D2FA29AF00022EF38 /* ReportPreviewWindowCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0EDE0B2C2FA29AEF0022EF38 /* ReportPreviewWindowCoordinator.swift */; };
 		0EDF2B552F9A815E00DB3D38 /* PatientRowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0EDF2B542F9A815D00DB3D38 /* PatientRowView.swift */; };
 		0EDF2B572F9A81A600DB3D38 /* PatientSelectionSummaryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0EDF2B562F9A81A600DB3D38 /* PatientSelectionSummaryView.swift */; };
 		0EDF2B592F9A81E300DB3D38 /* PatientClinicalWindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0EDF2B582F9A81E300DB3D38 /* PatientClinicalWindowView.swift */; };
@@ -46,6 +56,15 @@
 		0E87E5982F9F929000D79721 /* BloodTestsModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BloodTestsModels.swift; sourceTree = "<group>"; };
 		0E87E59A2F9F93D700D79721 /* BloodTestsAppKitTableView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BloodTestsAppKitTableView.swift; sourceTree = "<group>"; };
 		0E87E59C2F9F9E3900D79721 /* BloodTestsSectionViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BloodTestsSectionViewModel.swift; sourceTree = "<group>"; };
+		0E87E59E2F9FF09800D79721 /* BloodTestCalculators.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BloodTestCalculators.swift; sourceTree = "<group>"; };
+		0E87E5B42FA1299100D79721 /* SecureDataCipher.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SecureDataCipher.swift; sourceTree = "<group>"; };
+		0E87E5B62FA1299100D79721 /* AppLockViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLockViewModel.swift; sourceTree = "<group>"; };
+		0E87E5B82FA1299200D79721 /* AppLockGateView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLockGateView.swift; sourceTree = "<group>"; };
+		0E87E5BA2FA1310700D79721 /* EncryptedBackupDesign.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = EncryptedBackupDesign.md; sourceTree = "<group>"; };
+		0E87E5BC2FA1326B00D79721 /* EncryptedBackupService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EncryptedBackupService.swift; sourceTree = "<group>"; };
+		0E87E5BE2FA136F500D79721 /* BackupUIService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BackupUIService.swift; sourceTree = "<group>"; };
+		0E87E5D42FA1488C00D79721 /* GDPR_Roadmap.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = GDPR_Roadmap.md; sourceTree = "<group>"; };
+		0E87E5D62FA14E7A00D79721 /* PatientReportService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PatientReportService.swift; sourceTree = "<group>"; };
 		0E9D48002F97EE26008535EE /* ChironeGestionale.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ChironeGestionale.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		0E9D480F2F97EE29008535EE /* ChironeGestionaleTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ChironeGestionaleTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		0E9D48192F97EE29008535EE /* ChironeGestionaleUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = ChironeGestionaleUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -54,6 +73,7 @@
 		0EB9AC642F98140E00044B4B /* ItalianTaxCode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ItalianTaxCode.swift; sourceTree = "<group>"; };
 		0ED439372F9E93EF003124BC /* PatientWindowUnsavedStateStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PatientWindowUnsavedStateStore.swift; sourceTree = "<group>"; };
 		0ED439392F9E9A5A003124BC /* BloodTestsSectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BloodTestsSectionView.swift; sourceTree = "<group>"; };
+		0EDE0B2C2FA29AEF0022EF38 /* ReportPreviewWindowCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReportPreviewWindowCoordinator.swift; sourceTree = "<group>"; };
 		0EDF2B542F9A815D00DB3D38 /* PatientRowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PatientRowView.swift; sourceTree = "<group>"; };
 		0EDF2B562F9A81A600DB3D38 /* PatientSelectionSummaryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PatientSelectionSummaryView.swift; sourceTree = "<group>"; };
 		0EDF2B582F9A81E300DB3D38 /* PatientClinicalWindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PatientClinicalWindowView.swift; sourceTree = "<group>"; };
@@ -124,6 +144,16 @@
 				0E87E5982F9F929000D79721 /* BloodTestsModels.swift */,
 				0E87E59A2F9F93D700D79721 /* BloodTestsAppKitTableView.swift */,
 				0E87E59C2F9F9E3900D79721 /* BloodTestsSectionViewModel.swift */,
+				0E87E59E2F9FF09800D79721 /* BloodTestCalculators.swift */,
+				0E87E5B42FA1299100D79721 /* SecureDataCipher.swift */,
+				0E87E5B62FA1299100D79721 /* AppLockViewModel.swift */,
+				0E87E5B82FA1299200D79721 /* AppLockGateView.swift */,
+				0E87E5BA2FA1310700D79721 /* EncryptedBackupDesign.md */,
+				0E87E5BC2FA1326B00D79721 /* EncryptedBackupService.swift */,
+				0E87E5BE2FA136F500D79721 /* BackupUIService.swift */,
+				0E87E5D42FA1488C00D79721 /* GDPR_Roadmap.md */,
+				0E87E5D62FA14E7A00D79721 /* PatientReportService.swift */,
+				0EDE0B2C2FA29AEF0022EF38 /* ReportPreviewWindowCoordinator.swift */,
 			);
 			sourceTree = "<group>";
 		};
@@ -257,6 +287,8 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				0E87E5D52FA1488C00D79721 /* GDPR_Roadmap.md in Resources */,
+				0E87E5BB2FA1310700D79721 /* EncryptedBackupDesign.md in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -281,19 +313,27 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				0E87E5BD2FA1326B00D79721 /* EncryptedBackupService.swift in Sources */,
+				0E87E59F2F9FF09800D79721 /* BloodTestCalculators.swift in Sources */,
 				0E544F842F9BF9BB0002C6B2 /* ActiveIngredientAutocomplete.swift in Sources */,
+				0E87E5B52FA1299100D79721 /* SecureDataCipher.swift in Sources */,
+				0E87E5BF2FA136F500D79721 /* BackupUIService.swift in Sources */,
 				0E3C805F2F9B58BD0016B5A1 /* ClinicalUpdatesSectionView.swift in Sources */,
 				0EDF2B572F9A81A600DB3D38 /* PatientSelectionSummaryView.swift in Sources */,
+				0E87E5D72FA14E7A00D79721 /* PatientReportService.swift in Sources */,
+				0E87E5B92FA1299200D79721 /* AppLockGateView.swift in Sources */,
 				0ED4393A2F9E9A5A003124BC /* BloodTestsSectionView.swift in Sources */,
 				0EDF2B592F9A81E300DB3D38 /* PatientClinicalWindowView.swift in Sources */,
 				0E87E59D2F9F9E3900D79721 /* BloodTestsSectionViewModel.swift in Sources */,
 				0EDF2B552F9A815E00DB3D38 /* PatientRowView.swift in Sources */,
+				0E87E5B72FA1299100D79721 /* AppLockViewModel.swift in Sources */,
 				0E87E59B2F9F93D700D79721 /* BloodTestsAppKitTableView.swift in Sources */,
 				0EDF2B5B2F9A81F200DB3D38 /* PatientWindowCoordinator.swift in Sources */,
 				0E87E5992F9F929000D79721 /* BloodTestsModels.swift in Sources */,
 				0EB9AC612F980D6D00044B4B /* ClinicalNote.swift in Sources */,
 				0EB9AC652F98140E00044B4B /* ItalianTaxCode.swift in Sources */,
 				0ED439382F9E93EF003124BC /* PatientWindowUnsavedStateStore.swift in Sources */,
+				0EDE0B2D2FA29AF00022EF38 /* ReportPreviewWindowCoordinator.swift in Sources */,
 				0EB9AC632F980D7500044B4B /* TherapyMedication.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -460,7 +500,7 @@
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
-				ENABLE_USER_SELECTED_FILES = readonly;
+				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "Chirone Gestionale";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.medical";
@@ -495,7 +535,7 @@
 				ENABLE_APP_SANDBOX = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				ENABLE_PREVIEWS = YES;
-				ENABLE_USER_SELECTED_FILES = readonly;
+				ENABLE_USER_SELECTED_FILES = readwrite;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = "Chirone Gestionale";
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.medical";

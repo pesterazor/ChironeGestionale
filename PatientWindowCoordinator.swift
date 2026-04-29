@@ -7,12 +7,15 @@ final class PatientWindowCoordinator {
     static let shared = PatientWindowCoordinator()
 
     private var windows: [UUID: NSWindow] = [:]
+    private var patients: [UUID: Patient] = [:]
+    private var activePatientID: UUID?
 
     private init() {}
 
     func open(patient: Patient, modelContainer: ModelContainer) {
         if let existingWindow = windows[patient.id] {
             existingWindow.makeKeyAndOrderFront(nil)
+            activePatientID = patient.id
             NSApp.activate(ignoringOtherApps: true)
             return
         }
@@ -22,7 +25,7 @@ final class PatientWindowCoordinator {
 
         let hostingController = NSHostingController(rootView: contentView)
         let window = NSWindow(contentViewController: hostingController)
-        window.title = patient.displayTitle
+        window.title = patient.clinicalWindowTitle
         window.setContentSize(NSSize(width: 980, height: 720))
         window.minSize = NSSize(width: 820, height: 600)
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
@@ -30,25 +33,68 @@ final class PatientWindowCoordinator {
         window.center()
         window.makeKeyAndOrderFront(nil)
 
-        let delegate = PatientWindowDelegate(patientID: patient.id) { [weak self] patientID in
-            self?.windows.removeValue(forKey: patientID)
-        }
+        let delegate = PatientWindowDelegate(
+            patientID: patient.id,
+            onBecomeKey: { [weak self] patientID in
+                self?.activePatientID = patientID
+            },
+            onResignKey: { [weak self] patientID in
+                guard self?.activePatientID == patientID else { return }
+                self?.activePatientID = nil
+            },
+            onClose: { [weak self] patientID in
+                self?.windows.removeValue(forKey: patientID)
+                self?.patients.removeValue(forKey: patientID)
+                if self?.activePatientID == patientID {
+                    self?.activePatientID = nil
+                }
+            }
+        )
 
         window.delegate = delegate
         objc_setAssociatedObject(window, "patientWindowDelegate", delegate, .OBJC_ASSOCIATION_RETAIN_NONATOMIC)
 
         windows[patient.id] = window
+        patients[patient.id] = patient
+        activePatientID = patient.id
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    func activePatient() -> Patient? {
+        if let activePatientID, let active = patients[activePatientID] {
+            return active
+        }
+
+        guard let keyWindow = NSApp.keyWindow else { return nil }
+        guard let match = windows.first(where: { $0.value === keyWindow }) else { return nil }
+        return patients[match.key]
     }
 }
 
 private final class PatientWindowDelegate: NSObject, NSWindowDelegate {
     let patientID: UUID
+    let onBecomeKey: (UUID) -> Void
+    let onResignKey: (UUID) -> Void
     let onClose: (UUID) -> Void
 
-    init(patientID: UUID, onClose: @escaping (UUID) -> Void) {
+    init(
+        patientID: UUID,
+        onBecomeKey: @escaping (UUID) -> Void,
+        onResignKey: @escaping (UUID) -> Void,
+        onClose: @escaping (UUID) -> Void
+    ) {
         self.patientID = patientID
+        self.onBecomeKey = onBecomeKey
+        self.onResignKey = onResignKey
         self.onClose = onClose
+    }
+
+    func windowDidBecomeKey(_ notification: Notification) {
+        onBecomeKey(patientID)
+    }
+
+    func windowDidResignKey(_ notification: Notification) {
+        onResignKey(patientID)
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {

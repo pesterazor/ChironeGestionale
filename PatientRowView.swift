@@ -20,8 +20,8 @@ struct PatientRowView: View {
             }
 
             VStack(alignment: .leading, spacing: 4) {
-                if !patient.primaryDiagnosis.isEmpty {
-                    Label(patient.primaryDiagnosis, systemImage: "cross.case")
+                if !patient.readablePrimaryDiagnosis.isEmpty {
+                    Label(patient.readablePrimaryDiagnosis, systemImage: "cross.case")
                         .lineLimit(1)
                 }
 

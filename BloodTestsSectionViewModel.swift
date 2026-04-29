@@ -118,4 +118,167 @@ enum BloodTestsSectionViewModel {
 
         return nil
     }
+
+    static func applyDerivedCalculations(
+        to payload: inout BloodTestsTablePayload,
+        forColumnID columnID: UUID,
+        patientDateOfBirth: Date?,
+        patientGender: String?
+    ) {
+        let key = columnID.uuidString
+
+        let creatinineIndex = rowIndex(in: payload.rows, matchingAny: ["creatinina", "crea"])
+        let eGFRIndex = rowIndex(in: payload.rows, matchingAny: ["egfr"])
+        if let eGFRIndex {
+            if
+                let creatinineIndex,
+                let creatinine = numericValue(from: payload.rows[creatinineIndex].values[key]),
+                creatinine > 0,
+                let dateOfBirth = patientDateOfBirth,
+                let age = yearsSince(dateOfBirth),
+                age > 0
+            {
+                if let egfr = BloodTestCalculators.eGFRCKDEPI2021(
+                    creatinineMgDl: creatinine,
+                    ageYears: age,
+                    patientGender: patientGender
+                ) {
+                    payload.rows[eGFRIndex].values[key] = formatLabValue(egfr, maxFractionDigits: 0)
+                } else {
+                    payload.rows[eGFRIndex].values.removeValue(forKey: key)
+                }
+            } else {
+                payload.rows[eGFRIndex].values.removeValue(forKey: key)
+            }
+        }
+
+        let ldlIndex = rowIndex(in: payload.rows, matchingAny: ["ldl"])
+        let hdlIndex = rowIndex(in: payload.rows, matchingAny: ["hdl"])
+        let totalCholIndex = rowIndex(in: payload.rows, matchingAny: ["colesterolo totale", "colesterolo tot"])
+        let triglyceridesIndex = rowIndex(in: payload.rows, matchingAny: ["trigliceridi", "triglycerides", "tg"])
+
+        if let ldlIndex {
+            if
+                let hdlIndex,
+                let totalCholIndex,
+                let triglyceridesIndex,
+                let total = numericValue(from: payload.rows[totalCholIndex].values[key]),
+                let hdl = numericValue(from: payload.rows[hdlIndex].values[key]),
+                let triglycerides = numericValue(from: payload.rows[triglyceridesIndex].values[key]),
+                triglycerides < 400
+            {
+                if let ldl = BloodTestCalculators.ldlFriedewald(
+                    totalCholesterolMgDl: total,
+                    hdlMgDl: hdl,
+                    triglyceridesMgDl: triglycerides
+                ) {
+                    payload.rows[ldlIndex].values[key] = formatLabValue(ldl, maxFractionDigits: 0)
+                } else {
+                    payload.rows[ldlIndex].values.removeValue(forKey: key)
+                }
+            } else {
+                payload.rows[ldlIndex].values.removeValue(forKey: key)
+            }
+        }
+    }
+
+    static func bloodTestsRequestNoteText(
+        from previous: BloodTestsTablePayload,
+        to current: BloodTestsTablePayload
+    ) -> String? {
+        guard previous != current else { return nil }
+
+        let previousByName = rowsDictionary(from: previous.rows)
+        let currentByName = rowsDictionary(from: current.rows)
+
+        let allKeys = Set(previousByName.keys).union(currentByName.keys)
+        var touchedExamNames: [String] = []
+
+        for key in allKeys {
+            let oldValues = previousByName[key]?.values ?? [:]
+            let newValues = currentByName[key]?.values ?? [:]
+
+            guard hasInsertedOrUpdatedValue(from: oldValues, to: newValues) else { continue }
+
+            if let name = currentByName[key]?.displayName ?? previousByName[key]?.displayName {
+                touchedExamNames.append(name)
+            }
+        }
+
+        let sortedNames = touchedExamNames
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+            .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
+
+        guard !sortedNames.isEmpty else { return nil }
+        return "Presa visione esami ematochimici: \(sortedNames.joined(separator: ", "))."
+    }
+
+    private static func hasInsertedOrUpdatedValue(from oldValues: [String: String], to newValues: [String: String]) -> Bool {
+        for (columnKey, newValue) in newValues {
+            if oldValues[columnKey] != newValue {
+                return true
+            }
+        }
+        return false
+    }
+
+    private static func rowIndex(in rows: [BloodTestRowRecord], matchingAny tokens: [String]) -> Int? {
+        rows.firstIndex { row in
+            let normalized = BloodTestsDefaults.normalizedName(row.testName)
+            return tokens.contains { token in
+                let normalizedToken = BloodTestsDefaults.normalizedName(token)
+                return normalized == normalizedToken || normalized.contains(normalizedToken)
+            }
+        }
+    }
+
+    private static func numericValue(from raw: String?) -> Double? {
+        guard let raw else { return nil }
+        let normalized = raw.replacingOccurrences(of: ",", with: ".")
+
+        let pattern = "[-+]?[0-9]*\\.?[0-9]+"
+        guard
+            let regex = try? NSRegularExpression(pattern: pattern),
+            let match = regex.firstMatch(in: normalized, range: NSRange(location: 0, length: normalized.utf16.count)),
+            let range = Range(match.range, in: normalized)
+        else {
+            return nil
+        }
+
+        return Double(String(normalized[range]))
+    }
+
+    private static func yearsSince(_ dateOfBirth: Date) -> Int? {
+        let ageComponents = Calendar.current.dateComponents([.year], from: dateOfBirth, to: .now)
+        guard let years = ageComponents.year, years >= 0 else { return nil }
+        return years
+    }
+
+    private static func formatLabValue(_ value: Double, maxFractionDigits: Int) -> String {
+        let formatter = NumberFormatter()
+        formatter.numberStyle = .decimal
+        formatter.locale = Locale(identifier: "it_IT")
+        formatter.minimumFractionDigits = 0
+        formatter.maximumFractionDigits = maxFractionDigits
+        return formatter.string(from: NSNumber(value: value)) ?? String(value)
+    }
+
+    private static func rowsDictionary(from rows: [BloodTestRowRecord]) -> [String: (displayName: String, values: [String: String])] {
+        var result: [String: (displayName: String, values: [String: String])] = [:]
+
+        for row in rows {
+            let canonical = BloodTestsDefaults.canonicalName(row.testName)
+            let key = BloodTestsDefaults.normalizedName(canonical)
+            let cleanedValues = row.values.reduce(into: [String: String]()) { partial, pair in
+                let value = pair.value.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !value.isEmpty {
+                    partial[pair.key] = value
+                }
+            }
+            result[key] = (displayName: canonical, values: cleanedValues)
+        }
+
+        return result
+    }
 }

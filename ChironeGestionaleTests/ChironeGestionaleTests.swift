@@ -6,33 +6,64 @@
 //
 
 import XCTest
+import SwiftData
 @testable import ChironeGestionale
 
 final class ChironeGestionaleTests: XCTestCase {
+    func testEncryptedBackupRoundTrip() throws {
+        let schema = Schema([Patient.self, ClinicalNote.self, TherapyMedication.self])
+        let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
+        let container = try ModelContainer(for: schema, configurations: [config])
+        let context = ModelContext(container)
 
-    override func setUpWithError() throws {
-        // Put setup code here. This method is called before the invocation of each test method in the class.
+        let patient = Patient(
+            firstName: "Mario",
+            lastName: "Rossi",
+            primaryDiagnosis: "",
+            encryptedPrimaryDiagnosis: "diagnosi-cifrata",
+            allergies: "",
+            encryptedAllergies: "allergie-cifrate"
+        )
+        context.insert(patient)
+
+        let note = ClinicalNote(
+            content: "",
+            encryptedContent: "nota-cifrata",
+            wellbeingScore: 7,
+            patient: patient
+        )
+        context.insert(note)
+        patient.clinicalNotes.append(note)
+
+        let medication = TherapyMedication(
+            medicationName: "Olanzapina",
+            dosage: "10mg",
+            posology: "1 cp la sera",
+            patient: patient
+        )
+        context.insert(medication)
+        patient.therapyItems.append(medication)
+        try context.save()
+
+        let backupData = try EncryptedBackupService.shared.exportBackup(from: context, password: "PasswordMoltoSicura!")
+
+        let restoreContainer = try ModelContainer(for: schema, configurations: [config])
+        let restoreContext = ModelContext(restoreContainer)
+        try EncryptedBackupService.shared.restoreBackup(
+            into: restoreContext,
+            password: "PasswordMoltoSicura!",
+            backupData: backupData
+        )
+
+        let restoredPatients = try restoreContext.fetch(FetchDescriptor<Patient>())
+        let restoredNotes = try restoreContext.fetch(FetchDescriptor<ClinicalNote>())
+        let restoredMeds = try restoreContext.fetch(FetchDescriptor<TherapyMedication>())
+
+        XCTAssertEqual(restoredPatients.count, 1)
+        XCTAssertEqual(restoredNotes.count, 1)
+        XCTAssertEqual(restoredMeds.count, 1)
+        XCTAssertEqual(restoredPatients.first?.firstName, "Mario")
+        XCTAssertEqual(restoredPatients.first?.encryptedPrimaryDiagnosis, "diagnosi-cifrata")
+        XCTAssertEqual(restoredNotes.first?.encryptedContent, "nota-cifrata")
     }
-
-    override func tearDownWithError() throws {
-        // Put teardown code here. This method is called after the invocation of each test method in the class.
-    }
-
-    func testExample() throws {
-        // This is an example of a functional test case.
-        // Use XCTAssert and related functions to verify your tests produce the correct results.
-        // Any test you write for XCTest can be annotated as throws and async.
-        // Mark your test throws to produce an unexpected failure when your test encounters an uncaught error.
-        // Mark your test async to allow awaiting for asynchronous code to complete. Check the results with assertions afterwards.
-        // XCTest Documentation
-        // https://developer.apple.com/documentation/xctest
-    }
-
-    func testPerformanceExample() throws {
-        // This is an example of a performance test case.
-        self.measure {
-            // Put the code you want to measure the time of here.
-        }
-    }
-
 }
