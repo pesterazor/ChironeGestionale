@@ -2,7 +2,7 @@
 //  TherapyMedication.swift
 //  ChironeGestionale
 //
-//  Created by Codex on 21/04/2026.
+//  Created by Peste on 21/04/2026.
 //
 
 import Foundation
