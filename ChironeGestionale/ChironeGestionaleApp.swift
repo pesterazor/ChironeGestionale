@@ -19,7 +19,9 @@ private final class PrintCommandState: ObservableObject {
         let notifications: [Notification.Name] = [
             NSWindow.didBecomeKeyNotification,
             NSWindow.didResignKeyNotification,
-            NSWindow.willCloseNotification
+            NSWindow.willCloseNotification,
+            .patientWindowCoordinatorActivePatientDidChange,
+            NSMenu.didBeginTrackingNotification
         ]
 
         for name in notifications {

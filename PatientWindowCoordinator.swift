@@ -3,6 +3,10 @@ import SwiftData
 import AppKit
 import ObjectiveC
 
+extension Notification.Name {
+    static let patientWindowCoordinatorActivePatientDidChange = Notification.Name("patientWindowCoordinatorActivePatientDidChange")
+}
+
 final class PatientWindowCoordinator {
     static let shared = PatientWindowCoordinator()
 
@@ -12,10 +16,16 @@ final class PatientWindowCoordinator {
 
     private init() {}
 
+    private func setActivePatientID(_ newID: UUID?) {
+        guard activePatientID != newID else { return }
+        activePatientID = newID
+        NotificationCenter.default.post(name: .patientWindowCoordinatorActivePatientDidChange, object: self)
+    }
+
     func open(patient: Patient, modelContainer: ModelContainer) {
         if let existingWindow = windows[patient.id] {
             existingWindow.makeKeyAndOrderFront(nil)
-            activePatientID = patient.id
+            setActivePatientID(patient.id)
             NSApp.activate(ignoringOtherApps: true)
             return
         }
@@ -36,17 +46,17 @@ final class PatientWindowCoordinator {
         let delegate = PatientWindowDelegate(
             patientID: patient.id,
             onBecomeKey: { [weak self] patientID in
-                self?.activePatientID = patientID
+                self?.setActivePatientID(patientID)
             },
             onResignKey: { [weak self] patientID in
                 guard self?.activePatientID == patientID else { return }
-                self?.activePatientID = nil
+                self?.setActivePatientID(nil)
             },
             onClose: { [weak self] patientID in
                 self?.windows.removeValue(forKey: patientID)
                 self?.patients.removeValue(forKey: patientID)
                 if self?.activePatientID == patientID {
-                    self?.activePatientID = nil
+                    self?.setActivePatientID(nil)
                 }
             }
         )
@@ -56,11 +66,16 @@ final class PatientWindowCoordinator {
 
         windows[patient.id] = window
         patients[patient.id] = patient
-        activePatientID = patient.id
+        setActivePatientID(patient.id)
         NSApp.activate(ignoringOtherApps: true)
     }
 
     func activePatient() -> Patient? {
+        if activePatientID == nil,
+           let keyWindow = NSApp.keyWindow,
+           let match = windows.first(where: { $0.value === keyWindow }) {
+            setActivePatientID(match.key)
+        }
         if let activePatientID, let active = patients[activePatientID] {
             return active
         }

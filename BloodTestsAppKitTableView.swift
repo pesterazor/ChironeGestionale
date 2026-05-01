@@ -23,14 +23,14 @@ struct BloodTestsAppKitTableView: NSViewRepresentable {
         let container = BloodTestsSplitContainerView()
         context.coordinator.attach(container: container)
         context.coordinator.reloadStructureIfNeeded()
-        context.coordinator.reloadData()
+        context.coordinator.refreshIfNeeded(force: true)
         return container
     }
 
     func updateNSView(_ nsView: BloodTestsSplitContainerView, context: Context) {
         context.coordinator.parent = self
         context.coordinator.reloadStructureIfNeeded()
-        context.coordinator.reloadData()
+        context.coordinator.refreshIfNeeded(force: false)
 
         if let selectedColumnID, !columns.contains(where: { $0.id == selectedColumnID }) {
             DispatchQueue.main.async {
@@ -46,6 +46,10 @@ struct BloodTestsAppKitTableView: NSViewRepresentable {
         private weak var rightTable: BloodTestsNSTableView?
         private var renderedColumnIDs: [UUID] = []
         private var isSyncingScroll = false
+        private var pendingReloadAfterEditing = false
+        private var lastDataSignature = ""
+        private var lastSelectionSignature = ""
+        private var suppressReloadUntil: Date?
 
         init(_ parent: BloodTestsAppKitTableView) {
             self.parent = parent
@@ -63,19 +67,22 @@ struct BloodTestsAppKitTableView: NSViewRepresentable {
             container.rightTable.onHeaderClicked = { [weak self] columnID in
                 DispatchQueue.main.async {
                     self?.parent.selectedColumnID = columnID
-                    self?.reloadData()
+                    self?.refreshIfNeeded(force: false)
                 }
+            }
+            container.rightTable.onBodyCellMouseDown = { [weak self] _, _ in
+                self?.markRecentCellInteraction()
             }
             container.rightTable.onHeaderRightClicked = { [weak self] columnID in
                 DispatchQueue.main.async {
                     self?.parent.selectedColumnID = columnID
-                    self?.reloadData()
+                    self?.refreshIfNeeded(force: false)
                 }
             }
             container.rightTable.onHeaderContextMenuClosed = { [weak self] in
                 DispatchQueue.main.async {
                     self?.parent.selectedColumnID = nil
-                    self?.reloadData()
+                    self?.refreshIfNeeded(force: false)
                 }
             }
             container.rightTable.onHeaderContextAction = { [weak self] action, columnID in
@@ -168,10 +175,85 @@ struct BloodTestsAppKitTableView: NSViewRepresentable {
             updateRightHeaderTitlesAndSelection()
         }
 
-        func reloadData() {
+        func refreshIfNeeded(force: Bool) {
+            let dataSignature = makeDataSignature()
+            let selectionSignature = parent.selectedColumnID?.uuidString ?? "nil"
+            let shouldReload = force || dataSignature != lastDataSignature
+            let selectionChanged = selectionSignature != lastSelectionSignature
+
+            if shouldReload {
+                reloadDataPreservingEditor()
+                lastDataSignature = dataSignature
+            } else if selectionChanged {
+                // Selection-only change: repaint right table cells for column highlight without touching left side.
+                rightTable?.reloadData()
+                updateRightHeaderTitlesAndSelection()
+            } else {
+                updateRightHeaderTitlesAndSelection()
+            }
+
+            lastSelectionSignature = selectionSignature
+        }
+
+        func reloadDataPreservingEditor() {
+            if shouldDeferReloadForActiveFocus {
+                pendingReloadAfterEditing = true
+                updateRightHeaderTitlesAndSelection()
+                return
+            }
+
             leftTable?.reloadData()
             rightTable?.reloadData()
             updateRightHeaderTitlesAndSelection()
+            pendingReloadAfterEditing = false
+        }
+
+        private var shouldDeferReloadForActiveFocus: Bool {
+            if let suppressReloadUntil, Date() < suppressReloadUntil {
+                return true
+            }
+
+            if (leftTable?.currentEditor() != nil) || (rightTable?.currentEditor() != nil) {
+                return true
+            }
+
+            if let leftTable, leftTable.editedRow >= 0 || leftTable.editedColumn >= 0 {
+                return true
+            }
+
+            if let rightTable, rightTable.editedRow >= 0 || rightTable.editedColumn >= 0 {
+                return true
+            }
+
+            return false
+        }
+
+        private func markRecentCellInteraction() {
+            let delay: TimeInterval = 0.30
+            suppressReloadUntil = Date().addingTimeInterval(delay)
+
+            DispatchQueue.main.asyncAfter(deadline: .now() + delay + 0.02) { [weak self] in
+                guard let self else { return }
+                guard self.pendingReloadAfterEditing else { return }
+                self.refreshIfNeeded(force: false)
+            }
+        }
+
+        private func makeDataSignature() -> String {
+            var parts: [String] = []
+            parts.append("C:\(parent.columns.count)")
+            for column in parent.columns {
+                parts.append("COL:\(column.id.uuidString):\(column.dateText)")
+            }
+            parts.append("R:\(parent.rows.count)")
+            for row in parent.rows {
+                parts.append("ROW:\(row.id.uuidString):\(row.testName)")
+                let orderedValues = row.values.keys.sorted()
+                for key in orderedValues {
+                    parts.append("V:\(key)=\(row.values[key] ?? "")")
+                }
+            }
+            return parts.joined(separator: "|")
         }
 
         func numberOfRows(in tableView: NSTableView) -> Int {
@@ -202,6 +284,8 @@ struct BloodTestsAppKitTableView: NSViewRepresentable {
                 textField.isEditable = false
                 textField.isSelectable = true
                 textField.stringValue = parent.rowNameForID(rowModel.id)
+                textField.initialValue = textField.stringValue
+                textField.didBeginEditing = false
                 cellView.layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.08).cgColor
             } else {
                 guard let columnID = UUID(uuidString: tableColumn.identifier.rawValue) else { return nil }
@@ -209,6 +293,8 @@ struct BloodTestsAppKitTableView: NSViewRepresentable {
                 textField.isEditable = true
                 textField.isSelectable = true
                 textField.stringValue = parent.cellValueForIDs(rowModel.id, columnID)
+                textField.initialValue = textField.stringValue
+                textField.didBeginEditing = false
                 if parent.selectedColumnID == columnID {
                     cellView.layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.16).cgColor
                 } else {
@@ -248,12 +334,43 @@ struct BloodTestsAppKitTableView: NSViewRepresentable {
             parent.deleteRow(rowID)
         }
 
+        func controlTextDidBeginEditing(_ obj: Notification) {
+            guard let textField = obj.object as? EditableTableTextField else { return }
+            textField.didBeginEditing = true
+        }
+
         func controlTextDidEndEditing(_ obj: Notification) {
             guard let textField = obj.object as? EditableTableTextField, let rowID = textField.rowID else { return }
-            if let columnID = textField.columnID {
-                parent.setCellValue(rowID, columnID, textField.stringValue)
-            } else {
-                parent.setRowName(rowID, textField.stringValue)
+
+
+            // End-editing can fire even without user changes. Ignore those ghost events.
+            guard textField.didBeginEditing || textField.stringValue != textField.initialValue else {
+                if pendingReloadAfterEditing {
+                    DispatchQueue.main.async { [weak self] in
+                        self?.refreshIfNeeded(force: false)
+                    }
+                }
+                return
+            }
+
+            let value = textField.stringValue
+            let columnID = textField.columnID
+            textField.didBeginEditing = false
+
+            // Preserve the click-to-next-cell flow: avoid immediate reload in the handoff gap.
+            markRecentCellInteraction()
+
+            DispatchQueue.main.async { [weak self] in
+                guard let self else { return }
+                if let columnID {
+                    self.parent.setCellValue(rowID, columnID, value)
+                } else {
+                    self.parent.setRowName(rowID, value)
+                }
+
+                if self.pendingReloadAfterEditing {
+                    self.refreshIfNeeded(force: false)
+                }
             }
         }
 
@@ -365,24 +482,29 @@ final class BloodTestsNSTableView: NSTableView, NSMenuDelegate {
     var onHeaderRightClicked: ((UUID?) -> Void)?
     var onHeaderContextAction: ((HeaderContextAction, UUID) -> Void)?
     var onHeaderContextMenuClosed: (() -> Void)?
+    var onBodyCellMouseDown: ((Int, Int) -> Void)?
     private var activeHeaderContextMenu: NSMenu?
 
     override func mouseDown(with event: NSEvent) {
         let point = convert(event.locationInWindow, from: nil)
         let clickedRow = row(at: point)
+        let clickedColumn = column(at: point)
+
         if clickedRow == -1 {
-            let columnIndex = column(at: point)
-            if columnIndex >= 0 {
-                let identifier = tableColumns[columnIndex].identifier.rawValue
+            if clickedColumn >= 0 {
+                let identifier = tableColumns[clickedColumn].identifier.rawValue
                 onHeaderClicked?(UUID(uuidString: identifier))
             } else {
                 onHeaderClicked?(nil)
             }
+        } else {
+            onBodyCellMouseDown?(clickedRow, clickedColumn)
         }
         super.mouseDown(with: event)
     }
 
     override func rightMouseDown(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
         // Header right-click is handled by BloodTestsNSTableHeaderView.
         super.rightMouseDown(with: event)
     }
@@ -480,4 +602,20 @@ private final class BloodTestsNSTableHeaderView: NSTableHeaderView {
 private final class EditableTableTextField: NSTextField {
     var rowID: UUID?
     var columnID: UUID?
+    var didBeginEditing = false
+    var initialValue = ""
+
+    override func mouseDown(with event: NSEvent) {
+        super.mouseDown(with: event)
+    }
+
+    override func becomeFirstResponder() -> Bool {
+        let result = super.becomeFirstResponder()
+        return result
+    }
+
+    override func resignFirstResponder() -> Bool {
+        let result = super.resignFirstResponder()
+        return result
+    }
 }

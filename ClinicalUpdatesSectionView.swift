@@ -62,12 +62,6 @@ private struct ClinicalNoteCardView: View {
 
                 Spacer()
 
-                if note.updatedAt > note.createdAt {
-                    Text("Modificata")
-                        .font(.caption2)
-                        .foregroundStyle(.secondary)
-                }
-
                 if shouldShowWellbeing {
                     Text("Benessere percepito: \(note.wellbeingScore)/10")
                         .font(.caption)
@@ -225,6 +219,7 @@ private struct PerceivedWellbeingPickerView: View {
 private struct NewClinicalNoteComposerView: View {
     @Binding var content: String
     @Binding var wellbeing: Int
+    @Binding var noteDate: Date
     let onSave: () -> Void
 
     var body: some View {
@@ -250,6 +245,21 @@ private struct NewClinicalNoteComposerView: View {
                     .strokeBorder(Color.secondary.opacity(0.25))
             )
             .padding(.horizontal, 8)
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Data e ora aggiornamento")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+
+                DatePicker(
+                    "",
+                    selection: $noteDate,
+                    displayedComponents: [.date, .hourAndMinute]
+                )
+                .labelsHidden()
+                .datePickerStyle(.compact)
+            }
+            .padding(.horizontal, 12)
 
             VStack(alignment: .leading, spacing: 8) {
                 Text("Benessere percepito: \(wellbeing)/10")
@@ -352,6 +362,7 @@ struct ClinicalUpdatesSectionView: View {
 
     @State private var newNoteContent = ""
     @State private var newNoteWellbeing = 5
+    @State private var newNoteDate = Date()
     @State private var notesPageOffset = 0
     @State private var timelineNotes: [ClinicalNote] = []
     @State private var totalNotesCount = 0
@@ -423,9 +434,12 @@ struct ClinicalUpdatesSectionView: View {
     }
 
     private func saveNewNote() {
+        let timestamp = newNoteDate
         let note = ClinicalNote(
             content: "",
             wellbeingScore: newNoteWellbeing,
+            createdAt: timestamp,
+            updatedAt: timestamp,
             patient: patient
         )
         note.protectContent(newNoteContent.trimmingCharacters(in: .whitespacesAndNewlines))
@@ -434,6 +448,7 @@ struct ClinicalUpdatesSectionView: View {
         patient.updatedAt = .now
         newNoteContent = ""
         newNoteWellbeing = 5
+        newNoteDate = .now
         notesPageOffset = 0
         refreshTimelineNotes()
         onDraftStateChange(hasUnsavedDrafts)
@@ -463,6 +478,7 @@ struct ClinicalUpdatesSectionView: View {
                 NewClinicalNoteComposerView(
                     content: $newNoteContent,
                     wellbeing: $newNoteWellbeing,
+                    noteDate: $newNoteDate,
                     onSave: saveNewNote
                 )
 
@@ -490,6 +506,7 @@ struct ClinicalUpdatesSectionView: View {
         .onAppear {
             notesPageOffset = 0
             editingNoteIDs.removeAll()
+            newNoteDate = .now
             refreshTimelineNotes()
             onDraftStateChange(hasUnsavedDrafts)
         }
@@ -498,6 +515,7 @@ struct ClinicalUpdatesSectionView: View {
             editingNoteIDs.removeAll()
             newNoteContent = ""
             newNoteWellbeing = 5
+            newNoteDate = .now
             refreshTimelineNotes()
             onDraftStateChange(hasUnsavedDrafts)
         }

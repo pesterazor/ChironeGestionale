@@ -125,7 +125,7 @@ final class PatientReportService {
 
         let shortDateFormatter = DateFormatter()
         shortDateFormatter.locale = Locale(identifier: "it_IT")
-        shortDateFormatter.dateStyle = .medium
+        shortDateFormatter.dateFormat = "dd/MM/yyyy"
         shortDateFormatter.timeStyle = .none
 
 
@@ -134,7 +134,6 @@ final class PatientReportService {
         let remoteHistory = patient.readableRemotePsychiatricHistory.trimmingCharacters(in: .whitespacesAndNewlines)
 
         let firstClinicalDate = patient.clinicalNotes.map(\.createdAt).min() ?? patient.createdAt
-        let firstContactDate = shortDateFormatter.string(from: firstClinicalDate)
         let patientDescriptor = salutation(for: patient)
         let bornDescriptor = bornDescriptor(for: patient)
         let patientAgeText = patient.ageInYears.map { "\($0)" } ?? "età non determinabile"
@@ -144,7 +143,7 @@ final class PatientReportService {
 
         let birthDateText: String = {
             guard let dob = patient.dateOfBirth else { return "data non disponibile" }
-            return shortDateFormatter.string(from: dob)
+            return reportDateText(from: dob)
         }()
         let placeOfBirth = patient.placeOfBirth.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             ? "luogo non disponibile"
@@ -164,6 +163,13 @@ final class PatientReportService {
         let comorbidityNarrative = makeComorbidityNarrative(for: patient)
         let activeTherapy = activeTherapyLines(for: patient)
         let latestClinicalNarrative = makeLatestClinicalNarrative(for: patient, formatter: shortDateFormatter)
+        let latestBloodUpdate = makeRecentBloodUpdateLine(for: patient)
+        let quadroClinicoNarrative: String = {
+            guard let latestBloodUpdate, !latestBloodUpdate.isEmpty else {
+                return latestClinicalNarrative
+            }
+            return latestClinicalNarrative + "\n\n" + latestBloodUpdate
+        }()
         let therapySectionNarrative = makeTherapySectionNarrative(for: patient, activeTherapyLines: activeTherapy)
 
         return """
@@ -176,7 +182,7 @@ final class PatientReportService {
         \(comorbidityNarrative)
 
         Quadro clinico attuale
-        \(latestClinicalNarrative)
+        \(quadroClinicoNarrative)
 
         Terapia psicofarmacologica
         \(therapySectionNarrative)
@@ -184,13 +190,15 @@ final class PatientReportService {
     }
 
     private func makeLatestClinicalNarrative(for patient: Patient, formatter: DateFormatter) -> String {
+        _ = formatter
+
         let notes = patient.clinicalNotes.sorted { $0.createdAt > $1.createdAt }
         guard let latestClinical = notes.first(where: { !isTherapyUpdate($0.readableContent) }) ?? notes.first else {
             return "All'ultima valutazione non sono disponibili note cliniche registrate in cartella."
         }
 
-        let dateOnly = formatter.string(from: latestClinical.createdAt)
-        let content = normalizedSnippet(latestClinical.readableContent)
+        let dateOnly = reportDateText(from: latestClinical.createdAt)
+        let content = normalizedFullText(latestClinical.readableContent)
         return "All'ultima valutazione (\(dateOnly)): \(content)"
     }
 
@@ -202,12 +210,6 @@ final class PatientReportService {
 
         var lines: [String] = ["\(opening) assume:"]
         lines.append(contentsOf: activeTherapyLines.map { "- \($0)" })
-
-        if let bloodUpdate = makeRecentBloodUpdateLine(for: patient) {
-            lines.append("")
-            lines.append(bloodUpdate)
-        }
-
         return lines.joined(separator: "\n")
     }
 
@@ -515,11 +517,16 @@ final class PatientReportService {
         return collected
     }
 
-    private func normalizedSnippet(_ text: String) -> String {
+    private func normalizedFullText(_ text: String) -> String {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         let compact = trimmed.replacingOccurrences(of: "\n", with: " ")
+        return compact.isEmpty ? "(vuoto)" : compact
+    }
+
+    private func normalizedSnippet(_ text: String) -> String {
+        let compact = normalizedFullText(text)
         if compact.count <= 320 {
-            return compact.isEmpty ? "(vuoto)" : compact
+            return compact
         }
         let end = compact.index(compact.startIndex, offsetBy: 320)
         return String(compact[..<end]) + "…"
@@ -586,11 +593,8 @@ final class PatientReportService {
         }
         result.append(NSAttributedString(string: "\n", attributes: headerAttrs))
 
-        let dateFormatter = DateFormatter()
-        dateFormatter.locale = Locale(identifier: "it_IT")
-        dateFormatter.dateStyle = .long
-        dateFormatter.timeStyle = .none
-        result.append(NSAttributedString(string: dateFormatter.string(from: generatedAt) + "\n", attributes: dateAttrs))
+        let generatedDateText = reportDateText(from: generatedAt)
+        result.append(NSAttributedString(string: generatedDateText + "\n", attributes: dateAttrs))
 
         let title = reportTitle(for: patient)
         result.append(NSAttributedString(string: title + "\n", attributes: titleAttrs))
@@ -611,6 +615,27 @@ final class PatientReportService {
         return result
     }
 
+    private func reportDateText(from date: Date) -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "it_IT")
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.timeZone = .current
+        formatter.dateFormat = "dd/MM/yyyy"
+
+        let text = formatter.string(from: date).trimmingCharacters(in: .whitespacesAndNewlines)
+        if !text.isEmpty {
+            return text
+        }
+
+        let fallback = date.formatted(.dateTime.day().month(.twoDigits).year()).trimmingCharacters(in: .whitespacesAndNewlines)
+        if !fallback.isEmpty {
+            return fallback
+        }
+
+        // Final safety fallback: never leave dates blank in report text.
+        return "data non disponibile"
+    }
+
     private func reportHeaderLines() -> [String] {
         let defaults = UserDefaults.standard
         let keys = [
@@ -628,15 +653,6 @@ final class PatientReportService {
     private func reportTitle(for patient: Patient) -> String {
         let surname = patient.lastName.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
         let name = patient.firstName.trimmingCharacters(in: .whitespacesAndNewlines).uppercased()
-
-        let birthDateString: String = {
-            guard let date = patient.dateOfBirth else { return "DATA DI NASCITA N/D" }
-            let formatter = DateFormatter()
-            formatter.locale = Locale(identifier: "it_IT")
-            formatter.dateStyle = .short
-            formatter.timeStyle = .none
-            return formatter.string(from: date)
-        }()
 
         let person = [surname, name].filter { !$0.isEmpty }.joined(separator: " ")
         let resolvedPerson = person.isEmpty ? patient.fullName.uppercased() : person

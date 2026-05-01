@@ -1,6 +1,7 @@
 import SwiftUI
 import AppKit
 import PDFKit
+import UniformTypeIdentifiers
 
 private struct ReportPDFPreviewView: NSViewRepresentable {
     let document: PDFDocument
@@ -74,13 +75,8 @@ final class ReportPreviewWindowCoordinator {
             onClose: { [weak self] in
                 self?.window?.close()
             },
-            onSave: {
-                let alert = NSAlert()
-                alert.alertStyle = .informational
-                alert.messageText = "Salva referto"
-                alert.informativeText = "Funzionalità in preparazione."
-                alert.addButton(withTitle: "OK")
-                alert.runModal()
+            onSave: { [weak self] in
+                self?.saveReport(document: document, title: title)
             },
             onPrint: {
                 let alert = NSAlert()
@@ -104,5 +100,56 @@ final class ReportPreviewWindowCoordinator {
         NSApp.activate(ignoringOtherApps: true)
 
         window = previewWindow
+    }
+
+    private func saveReport(document: PDFDocument, title: String) {
+        guard let data = document.dataRepresentation() else {
+            showInfoAlert(title: "Salvataggio non riuscito", message: "Impossibile serializzare il PDF del referto.")
+            return
+        }
+
+        let panel = NSSavePanel()
+        panel.title = "Salva referto"
+        panel.nameFieldStringValue = defaultReportFilename(title: title)
+        panel.canCreateDirectories = true
+        panel.isExtensionHidden = false
+        panel.allowsOtherFileTypes = false
+        panel.allowedContentTypes = [.pdf]
+
+        guard panel.runModal() == .OK, let url = panel.url else {
+            return
+        }
+
+        do {
+            try data.write(to: url, options: .atomic)
+            showInfoAlert(title: "Referto salvato", message: "Il referto PDF è stato salvato correttamente.")
+        } catch {
+            showInfoAlert(title: "Salvataggio non riuscito", message: error.localizedDescription)
+        }
+    }
+
+    private func defaultReportFilename(title: String) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyyMMdd"
+        let normalizedTitle = sanitizedFilenameComponent(title)
+        return "Referto-\(normalizedTitle)-\(formatter.string(from: .now)).pdf"
+    }
+
+    private func sanitizedFilenameComponent(_ value: String) -> String {
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        let allowed = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_"))
+        let mapped = trimmed.unicodeScalars.map { allowed.contains($0) ? Character($0) : "_" }
+        let collapsed = String(mapped).replacingOccurrences(of: "__", with: "_")
+        let result = collapsed.trimmingCharacters(in: CharacterSet(charactersIn: "_"))
+        return result.isEmpty ? "Paziente" : result
+    }
+
+    private func showInfoAlert(title: String, message: String) {
+        let alert = NSAlert()
+        alert.alertStyle = .informational
+        alert.messageText = title
+        alert.informativeText = message
+        alert.addButton(withTitle: "OK")
+        alert.runModal()
     }
 }

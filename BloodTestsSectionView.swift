@@ -205,10 +205,10 @@ private extension BloodTestsSectionView {
     }
 
     func setRowName(_ rowID: UUID, to value: String) {
-        DispatchQueue.main.async {
-            guard let index = draft.rows.firstIndex(where: { $0.id == rowID }) else { return }
-            draft.rows[index].testName = value
-        }
+        guard let index = draft.rows.firstIndex(where: { $0.id == rowID }) else { return }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        if draft.rows[index].testName == trimmed { return }
+        draft.rows[index].testName = trimmed
     }
 
     func cellValue(rowID: UUID, columnID: UUID) -> String {
@@ -217,23 +217,24 @@ private extension BloodTestsSectionView {
     }
 
     func setCellValue(rowID: UUID, columnID: UUID, value: String) {
-        DispatchQueue.main.async {
-            let key = columnID.uuidString
-            guard let rowIndex = draft.rows.firstIndex(where: { $0.id == rowID }) else { return }
-            let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-            if trimmed.isEmpty {
-                draft.rows[rowIndex].values.removeValue(forKey: key)
-            } else {
-                draft.rows[rowIndex].values[key] = trimmed
-            }
+        let key = columnID.uuidString
+        guard let rowIndex = draft.rows.firstIndex(where: { $0.id == rowID }) else { return }
+        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
+        let previous = draft.rows[rowIndex].values[key] ?? ""
+        if previous == trimmed { return }
 
-            BloodTestsSectionViewModel.applyDerivedCalculations(
-                to: &draft,
-                forColumnID: columnID,
-                patientDateOfBirth: patient.dateOfBirth,
-                patientGender: patient.gender
-            )
+        if trimmed.isEmpty {
+            draft.rows[rowIndex].values.removeValue(forKey: key)
+        } else {
+            draft.rows[rowIndex].values[key] = trimmed
         }
+
+        BloodTestsSectionViewModel.applyDerivedCalculations(
+            to: &draft,
+            forColumnID: columnID,
+            patientDateOfBirth: patient.dateOfBirth,
+            patientGender: patient.gender
+        )
     }
 
     func canDeleteRow(with rowID: UUID) -> Bool {
