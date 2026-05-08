@@ -23,14 +23,47 @@ final class ChironeGestionaleUITests: XCTestCase {
     }
 
     @MainActor
-    func testExample() throws {
-        // UI tests must launch the application that they test.
+    func testBloodTestsCellToCellEditingEnablesSave() throws {
         let app = XCUIApplication()
+        app.launchArguments.append("-UITEST_DISABLE_LOCK")
         app.launch()
 
-        // Use XCTAssert and related functions to verify your tests produce the correct results.
-        // XCUIAutomation Documentation
-        // https://developer.apple.com/documentation/xcuiautomation
+        app.buttons["new_patient_button"].click()
+
+        let firstName = app.textFields["new_patient_first_name"]
+        XCTAssertTrue(firstName.waitForExistence(timeout: 3))
+        firstName.click()
+        firstName.typeText("Mario")
+
+        let lastName = app.textFields["new_patient_last_name"]
+        lastName.click()
+        lastName.typeText("Rossi")
+
+        let birthPlace = app.textFields["new_patient_birth_place"]
+        birthPlace.click()
+        birthPlace.typeText("Torino")
+
+        app.buttons["create_patient_button"].click()
+        app.buttons["open_patient_clinical_button"].click()
+
+        let addDateButton = app.buttons["bloodtests_add_date_button"]
+        XCTAssertTrue(addDateButton.waitForExistence(timeout: 5))
+        addDateButton.click()
+        addDateButton.click()
+
+        let firstCell = app.textFields["bloodtests_cell_row_0_col_0"]
+        XCTAssertTrue(firstCell.waitForExistence(timeout: 5))
+        firstCell.click()
+        firstCell.typeText("120")
+
+        let secondCell = app.textFields["bloodtests_cell_row_0_col_1"]
+        XCTAssertTrue(secondCell.waitForExistence(timeout: 5))
+        secondCell.click()
+        secondCell.typeText("121")
+
+        let saveButton = app.buttons["bloodtests_save_button"]
+        XCTAssertTrue(saveButton.waitForExistence(timeout: 2))
+        XCTAssertTrue(saveButton.isEnabled)
     }
 
     @MainActor

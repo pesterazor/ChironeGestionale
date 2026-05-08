@@ -67,12 +67,12 @@ Garantire che i flussi clinici principali siano veloci, robusti, prevedibili e s
 ### Sottopunti essenziali
 - [ ] Timeline clinica
   - [x] Retrodatazione data/ora su nuova nota.
-  - [ ] Retrodatazione opzionale anche in modifica nota esistente.
-  - [ ] Sorting stabile e testato su note con timestamp uguali.
+  - [x] Retrodatazione opzionale anche in modifica nota esistente.
+  - [x] Sorting stabile e testato su note con timestamp uguali.
 - [ ] Inserimento dati critici
   - [x] Stabilizzazione editing tabella esami ematochimici.
-  - [ ] Copertura test UI su passaggio cella->cella e commit valori.
-  - [ ] Presidi anti-regressione per focus/editing AppKit-SwiftUI bridge.
+  - [x] Copertura test UI su passaggio cella->cella e commit valori.
+  - [x] Presidi anti-regressione per focus/editing AppKit-SwiftUI bridge.
 - [ ] Referto clinico
   - [x] Date coerenti `dd/MM/yyyy`.
   - [x] Note cliniche senza troncamenti.

@@ -39,6 +39,18 @@ final class ClinicalNote {
 }
 
 extension ClinicalNote {
+    static func timelineSorted(_ notes: [ClinicalNote]) -> [ClinicalNote] {
+        notes.sorted { lhs, rhs in
+            if lhs.createdAt != rhs.createdAt {
+                return lhs.createdAt > rhs.createdAt
+            }
+            if lhs.updatedAt != rhs.updatedAt {
+                return lhs.updatedAt > rhs.updatedAt
+            }
+            return lhs.id.uuidString > rhs.id.uuidString
+        }
+    }
+
     var readableContent: String {
         if let decrypted = SecureDataCipher.shared.decrypt(encryptedContent) {
             return decrypted

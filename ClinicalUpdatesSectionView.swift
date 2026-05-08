@@ -16,10 +16,13 @@ private struct ClinicalNoteCardView: View {
     @Bindable var note: ClinicalNote
     let onDelete: () -> Void
     let onEditingStateChange: (UUID, Bool) -> Void
+    let onSaved: () -> Void
 
     @State private var isEditing = false
     @State private var draftContent = ""
     @State private var draftWellbeing = 5
+    @State private var draftDate = Date()
+    @State private var shouldEditDate = false
     @State private var showDeleteConfirmation = false
 
     @ViewBuilder
@@ -81,12 +84,18 @@ private struct ClinicalNoteCardView: View {
                         if !isAutomaticSystemUpdate {
                             note.wellbeingScore = draftWellbeing
                         }
+                        if shouldEditDate {
+                            note.createdAt = draftDate
+                        }
                         note.updatedAt = .now
                         isEditing = false
                         onEditingStateChange(note.id, false)
+                        onSaved()
                     } else {
                         draftContent = note.readableContent
                         draftWellbeing = note.wellbeingScore
+                        draftDate = note.createdAt
+                        shouldEditDate = false
                         isEditing = true
                         onEditingStateChange(note.id, true)
                     }
@@ -138,10 +147,27 @@ private struct ClinicalNoteCardView: View {
                         }
                     }
 
+                    VStack(alignment: .leading, spacing: 8) {
+                        Toggle("Modifica data e ora della nota", isOn: $shouldEditDate)
+                            .toggleStyle(.checkbox)
+
+                        if shouldEditDate {
+                            DatePicker(
+                                "",
+                                selection: $draftDate,
+                                displayedComponents: [.date, .hourAndMinute]
+                            )
+                            .labelsHidden()
+                            .datePickerStyle(.compact)
+                        }
+                    }
+
                     HStack {
                         Button("Annulla") {
                             draftContent = note.readableContent
                             draftWellbeing = note.wellbeingScore
+                            draftDate = note.createdAt
+                            shouldEditDate = false
                             isEditing = false
                             onEditingStateChange(note.id, false)
                         }
@@ -151,9 +177,13 @@ private struct ClinicalNoteCardView: View {
                             if !isAutomaticSystemUpdate {
                                 note.wellbeingScore = draftWellbeing
                             }
+                            if shouldEditDate {
+                                note.createdAt = draftDate
+                            }
                             note.updatedAt = .now
                             isEditing = false
                             onEditingStateChange(note.id, false)
+                            onSaved()
                         }
                         .buttonStyle(.borderedProminent)
                     }
@@ -296,6 +326,7 @@ private struct ClinicalTimelineView: View {
     let onGoToOlderPage: () -> Void
     let onDelete: (ClinicalNote) -> Void
     let onEditingStateChange: (UUID, Bool) -> Void
+    let onNoteSaved: () -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -338,6 +369,8 @@ private struct ClinicalTimelineView: View {
                             onDelete(note)
                         } onEditingStateChange: { noteID, isEditing in
                             onEditingStateChange(noteID, isEditing)
+                        } onSaved: {
+                            onNoteSaved()
                         }
                     }
                 }
@@ -413,15 +446,18 @@ struct ClinicalUpdatesSectionView: View {
             let maxOffset = max(0, ((totalNotesCount - 1) / notesPageSize) * notesPageSize)
             notesPageOffset = min(notesPageOffset, maxOffset)
 
-            var notesDescriptor = FetchDescriptor<ClinicalNote>(
+            let notesDescriptor = FetchDescriptor<ClinicalNote>(
                 predicate: #Predicate { note in
                     note.patient?.id == patientID
                 },
-                sortBy: [SortDescriptor(\ClinicalNote.createdAt, order: .reverse)]
+                sortBy: [
+                    SortDescriptor(\ClinicalNote.createdAt, order: .reverse),
+                    SortDescriptor(\ClinicalNote.updatedAt, order: .reverse)
+                ]
             )
-            notesDescriptor.fetchOffset = notesPageOffset
-            notesDescriptor.fetchLimit = notesPageSize
-            timelineNotes = try modelContext.fetch(notesDescriptor)
+            let fetchedNotes = try modelContext.fetch(notesDescriptor)
+            let orderedNotes = ClinicalNote.timelineSorted(fetchedNotes)
+            timelineNotes = Array(orderedNotes.dropFirst(notesPageOffset).prefix(notesPageSize))
         } catch {
             totalNotesCount = 0
             notesPageOffset = 0
@@ -498,6 +534,9 @@ struct ClinicalUpdatesSectionView: View {
                             editingNoteIDs.remove(noteID)
                         }
                         onDraftStateChange(hasUnsavedDrafts)
+                    },
+                    onNoteSaved: {
+                        refreshTimelineNotes()
                     }
                 )
             }

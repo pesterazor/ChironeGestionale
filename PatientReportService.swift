@@ -192,7 +192,7 @@ final class PatientReportService {
     private func makeLatestClinicalNarrative(for patient: Patient, formatter: DateFormatter) -> String {
         _ = formatter
 
-        let notes = patient.clinicalNotes.sorted { $0.createdAt > $1.createdAt }
+        let notes = ClinicalNote.timelineSorted(patient.clinicalNotes)
         guard let latestClinical = notes.first(where: {
             !isTherapyUpdate($0.readableContent) && !normalizedFullText($0.readableContent).isEmpty
         }) ?? notes.first(where: { !normalizedFullText($0.readableContent).isEmpty }) ?? notes.first else {

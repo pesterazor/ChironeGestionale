@@ -59,6 +59,9 @@ struct BloodTestsAppKitTableView: NSViewRepresentable {
             self.container = container
             self.leftTable = container.leftTable
             self.rightTable = container.rightTable
+            container.setAccessibilityIdentifier("bloodtests_split_container")
+            container.leftTable.setAccessibilityIdentifier("bloodtests_left_table")
+            container.rightTable.setAccessibilityIdentifier("bloodtests_right_table")
 
             container.leftTable.delegate = self
             container.leftTable.dataSource = self
@@ -289,12 +292,16 @@ struct BloodTestsAppKitTableView: NSViewRepresentable {
                 cellView.layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.08).cgColor
             } else {
                 guard let columnID = UUID(uuidString: tableColumn.identifier.rawValue) else { return nil }
+                let columnIndex = tableView.column(withIdentifier: tableColumn.identifier)
                 textField.columnID = columnID
                 textField.isEditable = true
                 textField.isSelectable = true
                 textField.stringValue = parent.cellValueForIDs(rowModel.id, columnID)
                 textField.initialValue = textField.stringValue
                 textField.didBeginEditing = false
+                if columnIndex >= 0 {
+                    textField.setAccessibilityIdentifier("bloodtests_cell_row_\(row)_col_\(columnIndex)")
+                }
                 if parent.selectedColumnID == columnID {
                     cellView.layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.16).cgColor
                 } else {

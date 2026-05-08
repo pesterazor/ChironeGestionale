@@ -122,11 +122,13 @@ struct ContentView: View {
                 } label: {
                     Label("Nuovo paziente", systemImage: "plus")
                 }
+                .accessibilityIdentifier("new_patient_button")
 
                 Button(action: openSelectedPatientWindow) {
                     Label("Apri cartella clinica", systemImage: "arrow.up.forward.app")
                 }
                 .disabled(selectedPatient == nil)
+                .accessibilityIdentifier("open_patient_window_button")
             }
         }
         .sheet(isPresented: $showAddPatientSheet) {
@@ -256,7 +258,9 @@ struct ContentView: View {
                 .fontWeight(.semibold)
 
             TextField("Nome *", text: $newPatientFirstName)
+                .accessibilityIdentifier("new_patient_first_name")
             TextField("Cognome *", text: $newPatientLastName)
+                .accessibilityIdentifier("new_patient_last_name")
             DatePicker("Data di nascita *", selection: $newPatientBirthDate, displayedComponents: .date)
             Picker("Genere", selection: $newPatientGender) {
                 Text("Maschio").tag("Maschio")
@@ -267,6 +271,7 @@ struct ContentView: View {
 
             VStack(alignment: .leading, spacing: 6) {
                 TextField("Luogo di nascita *", text: $newPatientPlaceOfBirth)
+                    .accessibilityIdentifier("new_patient_birth_place")
                     .focused($isNewPatientBirthPlaceFocused)
                     .onChange(of: newPatientPlaceOfBirth) { _, _ in
                         refreshNewPatientBirthPlaceSuggestions()
@@ -317,6 +322,7 @@ struct ContentView: View {
             }
 
             TextField("Provincia (es. TO)", text: $newPatientBirthProvince)
+                .accessibilityIdentifier("new_patient_birth_province")
 
             HStack {
                 Spacer()
@@ -331,6 +337,7 @@ struct ContentView: View {
                 }
                 .keyboardShortcut(.defaultAction)
                 .disabled(!canCreatePatient)
+                .accessibilityIdentifier("create_patient_button")
             }
         }
         .textFieldStyle(.roundedBorder)

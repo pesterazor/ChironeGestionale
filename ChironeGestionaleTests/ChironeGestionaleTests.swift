@@ -66,4 +66,62 @@ final class ChironeGestionaleTests: XCTestCase {
         XCTAssertEqual(restoredPatients.first?.encryptedPrimaryDiagnosis, "diagnosi-cifrata")
         XCTAssertEqual(restoredNotes.first?.encryptedContent, "nota-cifrata")
     }
+
+    func testClinicalTimelineSortedUsesDeterministicTieBreaker() {
+        let sameCreatedAt = Date(timeIntervalSince1970: 1_700_000_000)
+        let sameUpdatedAt = Date(timeIntervalSince1970: 1_700_000_100)
+
+        let noteA = ClinicalNote(
+            id: UUID(uuidString: "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA")!,
+            content: "A",
+            wellbeingScore: 5,
+            createdAt: sameCreatedAt,
+            updatedAt: sameUpdatedAt
+        )
+        let noteB = ClinicalNote(
+            id: UUID(uuidString: "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB")!,
+            content: "B",
+            wellbeingScore: 5,
+            createdAt: sameCreatedAt,
+            updatedAt: sameUpdatedAt
+        )
+        let noteC = ClinicalNote(
+            id: UUID(uuidString: "CCCCCCCC-CCCC-CCCC-CCCC-CCCCCCCCCCCC")!,
+            content: "C",
+            wellbeingScore: 5,
+            createdAt: sameCreatedAt,
+            updatedAt: sameUpdatedAt
+        )
+
+        let ordered = ClinicalNote.timelineSorted([noteA, noteC, noteB])
+        XCTAssertEqual(ordered.map(\.id.uuidString), [
+            "CCCCCCCC-CCCC-CCCC-CCCC-CCCCCCCCCCCC",
+            "BBBBBBBB-BBBB-BBBB-BBBB-BBBBBBBBBBBB",
+            "AAAAAAAA-AAAA-AAAA-AAAA-AAAAAAAAAAAA"
+        ])
+    }
+
+    func testClinicalTimelineSortedPrioritizesNewestDates() {
+        let oldDate = Date(timeIntervalSince1970: 1_700_000_000)
+        let newDate = Date(timeIntervalSince1970: 1_700_000_500)
+
+        let oldest = ClinicalNote(
+            id: UUID(uuidString: "11111111-1111-1111-1111-111111111111")!,
+            content: "old",
+            wellbeingScore: 5,
+            createdAt: oldDate,
+            updatedAt: oldDate
+        )
+        let newest = ClinicalNote(
+            id: UUID(uuidString: "22222222-2222-2222-2222-222222222222")!,
+            content: "new",
+            wellbeingScore: 5,
+            createdAt: newDate,
+            updatedAt: newDate
+        )
+
+        let ordered = ClinicalNote.timelineSorted([oldest, newest])
+        XCTAssertEqual(ordered.first?.id, newest.id)
+        XCTAssertEqual(ordered.last?.id, oldest.id)
+    }
 }

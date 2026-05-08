@@ -5,10 +5,11 @@ struct AppLockGateView<Content: View>: View {
     @StateObject private var lockViewModel = AppLockViewModel()
     @AppStorage("security.reauthTimeoutMinutes") private var reauthTimeoutMinutes = 5
     @ViewBuilder let content: () -> Content
+    private let isUITestMode = ProcessInfo.processInfo.arguments.contains("-UITEST_DISABLE_LOCK")
 
     var body: some View {
         Group {
-            if lockViewModel.isUnlocked {
+            if isUITestMode || lockViewModel.isUnlocked {
                 content()
             } else {
                 VStack(spacing: 16) {

@@ -132,6 +132,7 @@ struct PatientSelectionSummaryView: View {
                         Label("Apri cartella clinica", systemImage: "arrow.up.forward.app")
                     }
                     .buttonStyle(.borderedProminent)
+                    .accessibilityIdentifier("open_patient_clinical_button")
                 }
 
                 if !patient.hasRequiredDemographics {

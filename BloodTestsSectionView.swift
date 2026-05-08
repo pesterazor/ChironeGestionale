@@ -110,12 +110,14 @@ private extension BloodTestsSectionView {
                 addDateColumn(for: newColumnDate)
             }
             .buttonStyle(.bordered)
+            .accessibilityIdentifier("bloodtests_add_date_button")
 
             Button("Salva esami") {
                 saveDraft()
             }
             .buttonStyle(.borderedProminent)
             .disabled(!hasUnsavedChanges)
+            .accessibilityIdentifier("bloodtests_save_button")
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -168,6 +170,7 @@ private extension BloodTestsSectionView {
             onHeaderDeleteColumn: handleHeaderDeleteColumn,
             selectedColumnID: $selectedColumnID
         )
+        .accessibilityIdentifier("bloodtests_table")
         .frame(minHeight: 320)
         .background(
             RoundedRectangle(cornerRadius: 10)
@@ -192,6 +195,7 @@ private extension BloodTestsSectionView {
                     .submitLabel(.done)
                     .onSubmit(addCustomRow)
                     .frame(maxWidth: 360)
+                    .accessibilityIdentifier("bloodtests_new_exam_textfield")
             }
 
             Spacer()
