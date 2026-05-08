@@ -53,6 +53,9 @@ Gli screenshot UI verranno pubblicati nella cartella `docs/images/` con il pross
 ## Contribuire
 Linee guida in `CONTRIBUTING.md`.
 
+## Release
+Policy di rilascio in `RELEASE_POLICY.md`.
+
 ## Licenza
 MIT. Vedi `LICENSE`.
 

@@ -136,6 +136,7 @@ private struct PreferencesView: View {
                                 AuditEvent.patientWindowOpened,
                                 AuditEvent.patientWindowClosed,
                                 AuditEvent.reportExported,
+                                AuditEvent.patientDataExported,
                                 AuditEvent.backupExported,
                                 AuditEvent.backupRestored,
                                 AuditEvent.appUnlocked,
@@ -287,6 +288,14 @@ struct ChironeGestionaleApp: App {
                     backupUIService.restoreBackup(modelContainer: sharedModelContainer)
                 }
                 .keyboardShortcut("r", modifiers: [.command, .shift])
+
+                Divider()
+
+                Button("Esporta dati paziente (JSON)…") {
+                    exportActivePatientPortabilityData()
+                }
+                .keyboardShortcut("d", modifiers: [.command, .shift])
+                .disabled(!printCommandState.canPrintReport)
             }
         }
 
@@ -326,5 +335,19 @@ struct ChironeGestionaleApp: App {
             alert.addButton(withTitle: "OK")
             alert.runModal()
         }
+    }
+
+    private func exportActivePatientPortabilityData() {
+        guard let patient = PatientWindowCoordinator.shared.activePatient() else {
+            let alert = NSAlert()
+            alert.alertStyle = .informational
+            alert.messageText = "Nessuna scheda clinica attiva"
+            alert.informativeText = "Apri o attiva una scheda clinica paziente prima di esportare i dati strutturati."
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
+            return
+        }
+
+        backupUIService.exportPatientPortabilityData(patient: patient)
     }
 }

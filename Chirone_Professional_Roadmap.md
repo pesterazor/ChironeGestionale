@@ -1,82 +1,98 @@
 # Chirone Gestionale - Open-Source Professional Roadmap
 
 Stato documento: operativo
-Ultimo aggiornamento: 2026-05-07
-Visione: costruire il miglior gestionale clinico macOS open-source per professionisti della salute mentale, unendo eccellenza UX, sicurezza, affidabilità clinica e una community tecnica sana.
+Ultimo aggiornamento: 2026-05-08
+Visione: costruire il miglior gestionale clinico macOS open-source per professionisti della salute mentale, unendo eccellenza UX, sicurezza, affidabilità clinica e community tecnica.
 
 ## Regole di tracking
 - `[ ]` non fatto, `[x]` completato.
-- Ogni blocco ha: `Stato`, `Owner`, `Target`, `Completamento`, `Note`.
-- Non iniziare priorità inferiori senza baseline solida su priorità superiori.
+- Ogni priorità include: `Stato`, `Owner`, `Target`, `Completamento`, `Gate`.
+- Non aprire nuove priorità senza aver superato i gate della priorità corrente.
 
 ---
 
-## Snapshot attuale
+## Snapshot reale (analisi tecnica)
 
-### Punti già raggiunti
-- [x] Core macOS nativo (SwiftUI + SwiftData) con scheda paziente dedicata.
-- [x] Timeline clinica, terapia, esami ematochimici con calcoli derivati.
-- [x] Sicurezza base avanzata: lock app, cifratura dati sensibili, backup cifrato, restore.
-- [x] Referto PDF con anteprima ed esportazione.
+### Fondazioni già solide
+- [x] Core app nativa macOS con scheda clinica dedicata.
+- [x] Flusso clinico base completo (anagrafica, timeline, terapia, esami, referto).
+- [x] Sicurezza tecnica già avanzata (lock, cifratura campi sensibili, backup cifrato, restore).
+- [x] Audit trail operativo con viewer interno e log redatti.
+- [x] Base OSS pronta (README/CONTRIBUTING/SECURITY/template/CI minima).
 
-### Gap chiave per diventare "eccezionale e desiderabile"
-- [ ] Maturità open-source (governance, contribution flow, quality gates, release policy).
-- [ ] Affidabilità clinica totale sui flussi ad alta frequenza.
-- [ ] Tooling professionale (audit trail, test suite ampia, performance real-world).
-- [ ] Funzionalità distintive pro (decision support, automazioni utili, plugin ecosystem).
+### Collo di bottiglia attuali
+- [ ] Mancanza di “chiusura” esecutiva delle priorità già avviate (stato/gate non aggiornati).
+- [ ] Compliance ancora incompleta su retention/purge e allineamento formale GDPR roadmap.
+- [ ] Test strategy sbilanciata: buona su punti specifici, non ancora completa e2e sui flussi clinici critici.
+- [ ] UX pro ancora senza strato “velocità” (shortcut, command palette, multi-window resilience).
+- [ ] Assenza di benchmark prestazionali su dataset realistici.
+
+---
+
+## Piano esecutivo (prossimi 4 sprint)
+
+### Sprint A (stabilizzazione & coerenza)
+- [ ] Chiudere formalmente P0 e P1 con gate di uscita verificabili.
+- [ ] Allineare stato/completamento priorità con il lavoro già fatto.
+- [ ] Consolidare regressioni note e warning policy.
+
+### Sprint B (compliance operativa)
+- [ ] Policy retention + purge controllata (audit e dati operativi derivati).
+- [ ] Mappa di tracciabilità `GDPR_Roadmap.md` -> task codice.
+- [ ] Report interno “compliance readiness” per release candidate.
+
+### Sprint C (UX pro ad alta produttività)
+- [ ] Shortcut principali (nuova nota, salva terapia/esami, export referto).
+- [ ] Command palette clinica (azioni frequenti a tastiera).
+- [ ] Consolidamento multi-window (ripristino sessione, stato comandi menu coerente).
+
+### Sprint D (qualità e scala)
+- [ ] Test e2e UI sui flussi ad alta frequenza (dalla selezione paziente al referto).
+- [ ] Benchmark performance con dataset massivo (note/esami).
+- [ ] Profiling PDF export + query timeline.
 
 ---
 
 ## PRIORITÀ P0 - Fondazioni Open-Source Esemplari
-Stato: `DA AVVIARE`
+Stato: `COMPLETATA (da chiudere formalmente)`
 Owner: `____`
 Target: `2026-06-10`
-Completamento: `____`
-Note: `Questa priorità abilita scalabilità del progetto e contributi esterni di qualità.`
+Completamento: `95%`
+Gate:
+- [ ] Verifica finale checklist P0 in PR dedicata di chiusura.
 
-### Obiettivo grande
-Rendere Chirone un progetto OSS affidabile, trasparente e facile da contribuire, senza compromettere sicurezza e qualità clinica.
-
-### Sottopunti essenziali
-- [ ] Governance e documentazione core
-  - [x] `README.md` professionale: vision, feature, screenshot, quick start, limiti attuali.
-  - [x] `CONTRIBUTING.md` con flusso PR, branch strategy, convenzioni commit, checklist reviewer.
-  - [x] `CODE_OF_CONDUCT.md` e `SECURITY.md` (responsible disclosure).
-  - [x] `LICENSE` chiara e coerente con obiettivi uso clinico/open-source.
-- [ ] Issue/PR templates
-  - [x] Bug template con passi riproduzione, expected/actual, log richiesti.
-  - [x] Feature template con use-case clinico e criteri accettazione.
-  - [x] PR template con test eseguiti, impatto dati, impatto sicurezza.
-- [ ] Qualità minima automatizzata
-  - [x] CI build + test su push/PR.
-  - [x] Regole warning policy (evitare regressioni warning).
-  - [x] Job static checks (formattazione, lint ove applicabile).
+### Sottopunti
+- [x] Governance e documentazione core.
+- [x] Issue/PR templates.
+- [x] Qualità minima automatizzata (CI + warning policy + static checks).
+- [x] Release policy esplicita (`versioning`, `branch cut`, `hotfix flow`) formalizzata.
 
 ---
 
 ## PRIORITÀ P1 - Clinical Core Reliability (senza attrito)
-Stato: `IN CORSO`
+Stato: `QUASI COMPLETATA`
 Owner: `____`
 Target: `2026-06-30`
-Completamento: `____`
-Note: `Focus: workflow giornaliero psichiatra.`
+Completamento: `90%`
+Gate:
+- [ ] Esecuzione test manuali guidati su 10 casi edge reali.
+- [ ] Verifica completa checklist DoD su flussi clinici core.
 
-### Obiettivo grande
-Garantire che i flussi clinici principali siano veloci, robusti, prevedibili e senza perdita dati.
-
-### Sottopunti essenziali
-- [ ] Timeline clinica
-  - [x] Retrodatazione data/ora su nuova nota.
-  - [x] Retrodatazione opzionale anche in modifica nota esistente.
-  - [x] Sorting stabile e testato su note con timestamp uguali.
-- [ ] Inserimento dati critici
-  - [x] Stabilizzazione editing tabella esami ematochimici.
-  - [x] Copertura test UI su passaggio cella->cella e commit valori.
-  - [x] Presidi anti-regressione per focus/editing AppKit-SwiftUI bridge.
-- [ ] Referto clinico
-  - [x] Date coerenti `dd/MM/yyyy`.
-  - [x] Note cliniche senza troncamenti.
-  - [x] Coerenza narrativa completa su casi edge (campi vuoti, dati incompleti).
+### Sottopunti
+- [x] Timeline clinica
+  - [x] Retrodatazione nuova nota.
+  - [x] Retrodatazione modifica nota.
+  - [x] Sorting stabile con test su timestamp uguali.
+- [x] Inserimento dati critici
+  - [x] Stabilizzazione editing tabella esami.
+  - [x] UI test cella->cella e commit.
+  - [x] Presidi anti-regressione bridge AppKit/SwiftUI.
+- [x] Referto clinico
+  - [x] Date coerenti.
+  - [x] Nessun troncamento note.
+  - [x] Narrativa robusta su campi incompleti.
+- [ ] Hardening finale P1
+  - [ ] Test end-to-end “visita completa” (anagrafica -> note -> terapia -> esami -> referto).
 
 ---
 
@@ -84,21 +100,21 @@ Garantire che i flussi clinici principali siano veloci, robusti, prevedibili e s
 Stato: `IN CORSO`
 Owner: `____`
 Target: `2026-08-01`
-Completamento: `____`
-Note: `In sinergia con GDPR_Roadmap.md.`
+Completamento: `70%`
+Gate:
+- [ ] Policy retention/purge attiva e verificata.
+- [ ] Tracciabilità completa con `GDPR_Roadmap.md`.
 
-### Obiettivo grande
-Portare Chirone da "sicuro tecnicamente" a "compliant e verificabile operativamente".
-
-### Sottopunti essenziali
-- [ ] Audit trail tecnico/clinico
-  - [x] Eventi minimi: apertura/chiusura cartella, export referto, backup/restore, lock/unlock.
-  - [x] Nessuna PHI in chiaro nei log.
-  - [x] Viewer interno audit (filtro per data/tipo evento).
-- [ ] Compliance workflow
-  - [ ] Collegare milestone P0/P1/P2 del file `GDPR_Roadmap.md` a task implementativi nel codice.
-  - [ ] Export per diritto di accesso/portabilità (formato strutturato).
+### Sottopunti
+- [x] Audit trail tecnico/clinico
+  - [x] Eventi minimi implementati.
+  - [x] Nessuna PHI in chiaro.
+  - [x] Viewer interno con filtri.
+- [x] Compliance workflow (parziale)
+  - [x] Export diritto di accesso/portabilità strutturato.
+  - [ ] Collegare milestone P0/P1/P2 GDPR a task codice.
   - [ ] Policy retention e purge controllata.
+  - [x] Baseline retention audit log implementata (finestra temporale + cap record).
 - [ ] Hardening crittografia e backup
   - [ ] Verifica periodica restore automatizzata (test fixture).
   - [ ] Versioning formato backup + migrazioni documentate.
@@ -109,22 +125,21 @@ Portare Chirone da "sicuro tecnicamente" a "compliant e verificabile operativame
 Stato: `DA AVVIARE`
 Owner: `____`
 Target: `2026-09-15`
-Completamento: `____`
-Note: `Obiettivo: piacere d’uso superiore alle alternative generiche.`
+Completamento: `10%`
+Gate:
+- [ ] Riduzione misurabile del tempo medio task (shortcut + palette).
+- [ ] Nessuna regressione di chiarezza visiva nelle sezioni cliniche.
 
-### Obiettivo grande
-Far percepire Chirone come app "nativa Mac eccellente" per professionisti esigenti.
-
-### Sottopunti essenziali
+### Sottopunti
 - [ ] UX di velocità
-  - [ ] Shortcuts da tastiera per azioni principali (nuova nota, salva, referto, nuova terapia).
-  - [ ] Quick command palette clinica (azioni frequenti).
+  - [ ] Shortcut azioni principali.
+  - [ ] Command palette clinica.
 - [ ] Multi-window impeccabile
-  - [ ] Stato comandi menu sempre corretto (già migliorato, da consolidare con test).
-  - [ ] Ripristino sessione finestre cliniche.
+  - [ ] Stato menu sempre coerente.
+  - [ ] Ripristino sessione finestre.
 - [ ] Design professionale minimal
-  - [ ] Gerarchia visiva uniforme in tutte le sezioni cliniche.
-  - [ ] Miglioramento feedback micro-interazioni (salvataggi, validazioni, warning).
+  - [ ] Gerarchia visiva uniforme.
+  - [ ] Micro-feedback coerente (save/validazioni/warning).
 
 ---
 
@@ -132,34 +147,26 @@ Far percepire Chirone come app "nativa Mac eccellente" per professionisti esigen
 Stato: `DA AVVIARE`
 Owner: `____`
 Target: `2026-11-01`
-Completamento: `____`
-Note: `Solo dopo P0-P3 solidi.`
+Completamento: `0%`
+Gate:
+- [ ] Avvio solo dopo chiusura gate P1-P3.
 
-### Obiettivo grande
-Aggiungere funzioni "wow" realmente utili al lavoro clinico, evitando complessità inutile.
-
-### Sottopunti essenziali
-- [ ] Monitoraggi intelligenti farmaco-correlati
-  - [ ] Reminder su litio/valproato/carbamazepina/lamotrigina con regole temporali.
-  - [ ] Evidenza valori critici e trend longitudinali.
-- [ ] Template e automazioni cliniche
-  - [ ] Template note per visita di controllo/primo accesso/urgenza.
-  - [ ] Bozza relazione clinica guidata con revisione obbligatoria manuale.
-- [ ] Ecosistema modulare
-  - [ ] Definizione interfacce `PatientCore`.
-  - [ ] Primo plugin (Scheduling o Billing) con contratto stabile.
+### Sottopunti
+- [ ] Monitoraggi intelligenti farmaco-correlati.
+- [ ] Template/automazioni cliniche.
+- [ ] Ecosistema modulare (plugin contract stabile).
 
 ---
 
 ## Priorità trasversali (sempre attive)
 - [ ] Test strategy evolutiva
   - [ ] Unit test dominio clinico/sicurezza.
-  - [ ] UI test flussi critici end-to-end.
+  - [ ] UI test e2e flussi critici.
 - [ ] Performance su dataset reali
   - [ ] Benchmark con migliaia di note/esami.
-  - [ ] Profiling memory/CPU su export PDF e query timeline.
+  - [ ] Profiling memory/CPU su export PDF e timeline.
 - [ ] Documentazione tecnica viva
-  - [ ] ADR aggiornati su decisioni architetturali.
+  - [ ] ADR architetturali aggiornati.
   - [ ] Changelog orientato a clinici e contributori OSS.
 
 ---
@@ -169,17 +176,17 @@ Aggiungere funzioni "wow" realmente utili al lavoro clinico, evitando complessit
 - [ ] OCR allegati clinici + ricerca full-text.
 - [ ] Dashboard outcome longitudinali e aderenza monitoraggi.
 - [ ] Multi-professionista con ruoli granulari e segregazione accessi.
-- [ ] Sincronizzazione multi-dispositivo con modello zero-knowledge.
-- [ ] Export CSV del viewer audit (solo metadati redatti).
-- [ ] Rotazione e retention audit log (policy temporale + purge controllata).
-- [ ] Audit tamper-evident (hash chain dei record locali).
+- [ ] Sincronizzazione multi-dispositivo zero-knowledge.
+- [ ] Export CSV viewer audit (metadati redatti).
+- [ ] Rotazione e retention audit log (policy temporale + purge).
+- [ ] Audit tamper-evident (hash chain locale).
 
 ---
 
 ## Definizione di Done (DoD)
 Un task è completato solo se:
-- [ ] comportamento verificato manualmente sui casi principali e edge.
-- [ ] build verde senza warning regressivi.
-- [ ] test aggiunti/aggiornati dove applicabile.
-- [ ] documentazione utente/tecnica aggiornata.
-- [ ] impatto sicurezza/compliance valutato e annotato.
+- [ ] Comportamento verificato manualmente su casi principali + edge.
+- [ ] Build verde senza warning regressivi.
+- [ ] Test aggiunti/aggiornati dove applicabile.
+- [ ] Documentazione utente/tecnica aggiornata.
+- [ ] Impatto sicurezza/compliance valutato e annotato.

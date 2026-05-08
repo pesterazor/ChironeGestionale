@@ -8,6 +8,7 @@ enum AuditEvent: String {
     case patientWindowOpened = "patient_window_opened"
     case patientWindowClosed = "patient_window_closed"
     case reportExported = "report_exported"
+    case patientDataExported = "patient_data_exported"
     case backupExported = "backup_exported"
     case backupRestored = "backup_restored"
     case appUnlocked = "app_unlocked"
@@ -19,6 +20,7 @@ enum AuditEvent: String {
         case .patientWindowOpened: return "Apertura cartella"
         case .patientWindowClosed: return "Chiusura cartella"
         case .reportExported: return "Export referto"
+        case .patientDataExported: return "Export dati paziente"
         case .backupExported: return "Export backup"
         case .backupRestored: return "Restore backup"
         case .appUnlocked: return "App sbloccata"
@@ -35,6 +37,8 @@ final class AuditTrailService {
     private let fileManager = FileManager.default
     private let encoder = JSONEncoder()
     private let logFileURL: URL
+    private let retentionDays = 365
+    private let maxRecords = 10_000
 
     private init() {
         encoder.dateEncodingStrategy = .iso8601
@@ -49,6 +53,7 @@ final class AuditTrailService {
 
         try? fileManager.createDirectory(at: baseDirectory, withIntermediateDirectories: true)
         logFileURL = baseDirectory.appendingPathComponent("audit.log", isDirectory: false)
+        enforceRetentionPolicy()
     }
 
     func log(_ event: AuditEvent, metadata: [String: String] = [:]) {
@@ -106,8 +111,54 @@ final class AuditTrailService {
             defer { try? handle.close() }
             try handle.seekToEnd()
             try handle.write(contentsOf: payload)
+            enforceRetentionPolicy()
         } catch {
             // Best-effort logging: errors are intentionally ignored.
+        }
+    }
+
+    private func enforceRetentionPolicy() {
+        guard let data = try? Data(contentsOf: logFileURL),
+              let content = String(data: data, encoding: .utf8)
+        else {
+            return
+        }
+
+        let cutoff = Calendar.current.date(byAdding: .day, value: -retentionDays, to: Date()) ?? .distantPast
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+
+        var validRecords: [AuditRecord] = []
+        for line in content.split(separator: "\n") {
+            guard let rowData = line.data(using: .utf8),
+                  let record = try? decoder.decode(AuditRecord.self, from: rowData),
+                  record.timestamp >= cutoff
+            else {
+                continue
+            }
+            validRecords.append(record)
+        }
+
+        if validRecords.count > maxRecords {
+            validRecords = Array(validRecords.suffix(maxRecords))
+        }
+
+        // Rebuild JSON Lines file with retained records only.
+        let lineEncoder = JSONEncoder()
+        lineEncoder.dateEncodingStrategy = .iso8601
+        var lines: [String] = []
+        for record in validRecords {
+            guard let data = try? lineEncoder.encode(record),
+                  let text = String(data: data, encoding: .utf8)
+            else {
+                continue
+            }
+            lines.append(text)
+        }
+
+        let rebuilt = lines.joined(separator: "\n") + (lines.isEmpty ? "" : "\n")
+        if rebuilt != content, let rebuiltData = rebuilt.data(using: .utf8) {
+            try? rebuiltData.write(to: logFileURL, options: .atomic)
         }
     }
 }
@@ -121,6 +172,72 @@ struct AuditRecord: Codable {
 @MainActor
 final class BackupUIService {
     private let backupFileExtension = "chdb"
+    private let portabilityFileExtension = "json"
+
+    private struct PatientPortabilityExport: Codable {
+        struct PatientData: Codable {
+            let id: UUID
+            let fullName: String
+            let firstName: String
+            let lastName: String
+            let dateOfBirth: Date?
+            let gender: String?
+            let taxCode: String
+            let placeOfBirth: String
+            let birthProvince: String?
+            let residence: String
+            let residenceAddress: String?
+            let residenceCity: String?
+            let residenceProvince: String?
+            let phoneNumber: String
+            let emergencyContact: String
+            let generalPractitioner: String
+            let privacyConsentSigned: Bool
+            let referenceCSM: String
+            let referringClinician: String
+            let primaryDiagnosis: String
+            let secondaryDiagnosis: String
+            let medicalComorbidities: String
+            let remotePsychiatricHistory: String
+            let allergies: String
+            let exemptions: String
+            let heartFunctionStatus: String?
+            let liverFunctionStatus: String?
+            let kidneyFunctionStatus: String?
+            let bloodTestsTableJSON: String?
+            let createdAt: Date
+            let updatedAt: Date
+        }
+
+        struct ClinicalNoteData: Codable {
+            let id: UUID
+            let content: String
+            let wellbeingScore: Int
+            let createdAt: Date
+            let updatedAt: Date
+        }
+
+        struct TherapyItemData: Codable {
+            let id: UUID
+            let medicationName: String
+            let dosage: String
+            let posology: String
+            let isActive: Bool
+            let createdAt: Date
+            let updatedAt: Date
+        }
+
+        struct Metadata: Codable {
+            let exportedAt: Date
+            let appVersion: String
+            let schemaVersion: Int
+        }
+
+        let metadata: Metadata
+        let patient: PatientData
+        let clinicalNotes: [ClinicalNoteData]
+        let therapyItems: [TherapyItemData]
+    }
 
     func exportBackup(modelContainer: ModelContainer) {
         guard let password = promptPassword(title: "Esporta backup cifrato", message: "Inserisci una password per proteggere il backup.", requiresConfirmation: true) else {
@@ -193,11 +310,127 @@ final class BackupUIService {
         }
     }
 
+    func exportPatientPortabilityData(patient: Patient) {
+        let panel = NSSavePanel()
+        panel.title = "Esporta dati paziente"
+        panel.nameFieldStringValue = defaultPatientExportFilename(for: patient)
+        if let jsonType = UTType(filenameExtension: portabilityFileExtension, conformingTo: .json) {
+            panel.allowedContentTypes = [jsonType]
+        }
+        panel.canCreateDirectories = true
+
+        guard panel.runModal() == .OK, let url = panel.url else {
+            return
+        }
+
+        do {
+            let exportPayload = makePortabilityExport(for: patient)
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            let data = try encoder.encode(exportPayload)
+            try data.write(to: url, options: .atomic)
+            AuditTrailService.shared.log(
+                .patientDataExported,
+                metadata: [
+                    "patient": AuditTrailService.shared.redactedIdentifier(for: patient.id)
+                ]
+            )
+            showInfoAlert(title: "Export completato", message: "Dati paziente esportati in formato strutturato JSON.")
+        } catch {
+            showErrorAlert(title: "Export non riuscito", error: error)
+        }
+    }
+
     private func defaultBackupFilename() -> String {
         let formatter = DateFormatter()
         formatter.dateFormat = "yyMMdd"
         let user = sanitizedUsername()
         return "ChironeBackup-\(user)-\(formatter.string(from: .now)).\(backupFileExtension)"
+    }
+
+    private func defaultPatientExportFilename(for patient: Patient) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyMMdd"
+        let safeName = patient.fullName
+            .replacingOccurrences(of: " ", with: "_")
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let fallback = safeName.isEmpty ? "Paziente" : safeName
+        return "ChironePatientExport-\(fallback)-\(formatter.string(from: .now)).\(portabilityFileExtension)"
+    }
+
+    private func makePortabilityExport(for patient: Patient) -> PatientPortabilityExport {
+        let notes = ClinicalNote.timelineSorted(patient.clinicalNotes)
+            .map {
+                PatientPortabilityExport.ClinicalNoteData(
+                    id: $0.id,
+                    content: $0.readableContent,
+                    wellbeingScore: $0.wellbeingScore,
+                    createdAt: $0.createdAt,
+                    updatedAt: $0.updatedAt
+                )
+            }
+
+        let therapy = patient.therapyItems.sorted { lhs, rhs in
+            if lhs.createdAt != rhs.createdAt { return lhs.createdAt < rhs.createdAt }
+            return lhs.id.uuidString < rhs.id.uuidString
+        }
+        .map {
+            PatientPortabilityExport.TherapyItemData(
+                id: $0.id,
+                medicationName: $0.medicationName,
+                dosage: $0.dosage,
+                posology: $0.posology,
+                isActive: $0.isActive,
+                createdAt: $0.createdAt,
+                updatedAt: $0.updatedAt
+            )
+        }
+
+        let patientData = PatientPortabilityExport.PatientData(
+            id: patient.id,
+            fullName: patient.fullName,
+            firstName: patient.firstName,
+            lastName: patient.lastName,
+            dateOfBirth: patient.dateOfBirth,
+            gender: patient.gender,
+            taxCode: patient.taxCode,
+            placeOfBirth: patient.placeOfBirth,
+            birthProvince: patient.birthProvince,
+            residence: patient.residence,
+            residenceAddress: patient.residenceAddress,
+            residenceCity: patient.residenceCity,
+            residenceProvince: patient.residenceProvince,
+            phoneNumber: patient.phoneNumber,
+            emergencyContact: patient.emergencyContact,
+            generalPractitioner: patient.generalPractitioner,
+            privacyConsentSigned: patient.privacyConsentSigned,
+            referenceCSM: patient.referenceCSM,
+            referringClinician: patient.referringClinician,
+            primaryDiagnosis: patient.readablePrimaryDiagnosis,
+            secondaryDiagnosis: patient.readableSecondaryDiagnosis,
+            medicalComorbidities: patient.readableMedicalComorbidities,
+            remotePsychiatricHistory: patient.readableRemotePsychiatricHistory,
+            allergies: patient.readableAllergies,
+            exemptions: patient.exemptions,
+            heartFunctionStatus: patient.heartFunctionStatus,
+            liverFunctionStatus: patient.liverFunctionStatus,
+            kidneyFunctionStatus: patient.kidneyFunctionStatus,
+            bloodTestsTableJSON: patient.bloodTestsTableJSON,
+            createdAt: patient.createdAt,
+            updatedAt: patient.updatedAt
+        )
+
+        return PatientPortabilityExport(
+            metadata: .init(
+                exportedAt: .now,
+                appVersion: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown",
+                schemaVersion: 1
+            ),
+            patient: patientData,
+            clinicalNotes: notes,
+            therapyItems: therapy
+        )
     }
 
     private func sanitizedUsername() -> String {
