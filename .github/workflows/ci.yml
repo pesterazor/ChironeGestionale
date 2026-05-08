@@ -1,0 +1,68 @@
+name: CI
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  static-checks:
+    name: Static Checks
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Detect merge conflict markers
+        run: |
+          if grep -R -n -E '^(<<<<<<<|=======|>>>>>>>)' . --exclude-dir=.git; then
+            echo "Merge conflict markers found"
+            exit 1
+          fi
+
+      - name: Detect trailing whitespace in Swift sources
+        run: |
+          if grep -R -n -E '[[:blank:]]+$' --include='*.swift' .; then
+            echo "Trailing whitespace found in Swift files"
+            exit 1
+          fi
+
+  build-and-test:
+    name: Build and Test (macOS)
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -switch /Applications/Xcode.app/Contents/Developer
+
+      - name: Resolve Xcode project
+        run: xcodebuild -list -project ChironeGestionale.xcodeproj
+
+      - name: Build
+        run: |
+          xcodebuild \
+            -project ChironeGestionale.xcodeproj \
+            -scheme ChironeGestionale \
+            -configuration Debug \
+            -destination 'platform=macOS' \
+            SWIFT_TREAT_WARNINGS_AS_ERRORS=YES \
+            GCC_TREAT_WARNINGS_AS_ERRORS=YES \
+            build
+
+      - name: Test
+        run: |
+          xcodebuild \
+            -project ChironeGestionale.xcodeproj \
+            -scheme ChironeGestionale \
+            -configuration Debug \
+            -destination 'platform=macOS' \
+            SWIFT_TREAT_WARNINGS_AS_ERRORS=YES \
+            GCC_TREAT_WARNINGS_AS_ERRORS=YES \
+            test

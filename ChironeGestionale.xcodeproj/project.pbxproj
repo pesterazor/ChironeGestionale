@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		0E3C805F2F9B58BD0016B5A1 /* ClinicalUpdatesSectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E3C805E2F9B58BD0016B5A1 /* ClinicalUpdatesSectionView.swift */; };
+		0E4C62A62FAD2A43008358EA /* Chirone_Professional_Roadmap.md in Resources */ = {isa = PBXBuildFile; fileRef = 0E4C62A52FAD2A43008358EA /* Chirone_Professional_Roadmap.md */; };
 		0E544F842F9BF9BB0002C6B2 /* ActiveIngredientAutocomplete.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E544F832F9BF9BB0002C6B2 /* ActiveIngredientAutocomplete.swift */; };
 		0E87E5992F9F929000D79721 /* BloodTestsModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E87E5982F9F929000D79721 /* BloodTestsModels.swift */; };
 		0E87E59B2F9F93D700D79721 /* BloodTestsAppKitTableView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E87E59A2F9F93D700D79721 /* BloodTestsAppKitTableView.swift */; };
@@ -52,6 +53,7 @@
 
 /* Begin PBXFileReference section */
 		0E3C805E2F9B58BD0016B5A1 /* ClinicalUpdatesSectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClinicalUpdatesSectionView.swift; sourceTree = "<group>"; };
+		0E4C62A52FAD2A43008358EA /* Chirone_Professional_Roadmap.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = Chirone_Professional_Roadmap.md; sourceTree = "<group>"; };
 		0E544F832F9BF9BB0002C6B2 /* ActiveIngredientAutocomplete.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActiveIngredientAutocomplete.swift; sourceTree = "<group>"; };
 		0E87E5982F9F929000D79721 /* BloodTestsModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BloodTestsModels.swift; sourceTree = "<group>"; };
 		0E87E59A2F9F93D700D79721 /* BloodTestsAppKitTableView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BloodTestsAppKitTableView.swift; sourceTree = "<group>"; };
@@ -154,6 +156,7 @@
 				0E87E5D42FA1488C00D79721 /* GDPR_Roadmap.md */,
 				0E87E5D62FA14E7A00D79721 /* PatientReportService.swift */,
 				0EDE0B2C2FA29AEF0022EF38 /* ReportPreviewWindowCoordinator.swift */,
+				0E4C62A52FAD2A43008358EA /* Chirone_Professional_Roadmap.md */,
 			);
 			sourceTree = "<group>";
 		};
@@ -289,6 +292,7 @@
 			files = (
 				0E87E5D52FA1488C00D79721 /* GDPR_Roadmap.md in Resources */,
 				0E87E5BB2FA1310700D79721 /* EncryptedBackupDesign.md in Resources */,
+				0E4C62A62FAD2A43008358EA /* Chirone_Professional_Roadmap.md in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

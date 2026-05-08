@@ -193,12 +193,17 @@ final class PatientReportService {
         _ = formatter
 
         let notes = patient.clinicalNotes.sorted { $0.createdAt > $1.createdAt }
-        guard let latestClinical = notes.first(where: { !isTherapyUpdate($0.readableContent) }) ?? notes.first else {
+        guard let latestClinical = notes.first(where: {
+            !isTherapyUpdate($0.readableContent) && !normalizedFullText($0.readableContent).isEmpty
+        }) ?? notes.first(where: { !normalizedFullText($0.readableContent).isEmpty }) ?? notes.first else {
             return "All'ultima valutazione non sono disponibili note cliniche registrate in cartella."
         }
 
         let dateOnly = reportDateText(from: latestClinical.createdAt)
         let content = normalizedFullText(latestClinical.readableContent)
+        guard !content.isEmpty else {
+            return "All'ultima valutazione (\(dateOnly)) non sono state annotate osservazioni cliniche descrittive."
+        }
         return "All'ultima valutazione (\(dateOnly)): \(content)"
     }
 
@@ -520,7 +525,7 @@ final class PatientReportService {
     private func normalizedFullText(_ text: String) -> String {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         let compact = trimmed.replacingOccurrences(of: "\n", with: " ")
-        return compact.isEmpty ? "(vuoto)" : compact
+        return compact
     }
 
     private func normalizedSnippet(_ text: String) -> String {
