@@ -51,6 +51,9 @@ private struct PreferencesView: View {
     @AppStorage("report.doctorPhoneEmail") private var doctorPhoneEmail = ""
     @AppStorage("report.notesInReport") private var reportNotesInReport = 3
     private let quickTimeouts = [1, 5, 10, 15, 30, 60]
+    @State private var selectedAuditEventRaw = "all"
+    @State private var auditFromDate = Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
+    @State private var auditRecords: [AuditRecord] = []
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -123,9 +126,83 @@ private struct PreferencesView: View {
                 }
                 .padding(10)
             }
+
+            GroupBox("Audit trail") {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 10) {
+                        Picker("Evento", selection: $selectedAuditEventRaw) {
+                            Text("Tutti").tag("all")
+                            ForEach([
+                                AuditEvent.patientWindowOpened,
+                                AuditEvent.patientWindowClosed,
+                                AuditEvent.reportExported,
+                                AuditEvent.backupExported,
+                                AuditEvent.backupRestored,
+                                AuditEvent.appUnlocked,
+                                AuditEvent.appLockFailed,
+                                AuditEvent.appLocked
+                            ], id: \.rawValue) { event in
+                                Text(event.displayName).tag(event.rawValue)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .frame(width: 200)
+
+                        DatePicker("Da", selection: $auditFromDate, displayedComponents: [.date, .hourAndMinute])
+                            .datePickerStyle(.compact)
+
+                        Button("Aggiorna") {
+                            reloadAuditRecords()
+                        }
+                        .buttonStyle(.bordered)
+
+                        Spacer()
+                    }
+
+                    if auditRecords.isEmpty {
+                        Text("Nessun evento audit nel filtro selezionato.")
+                            .foregroundStyle(.secondary)
+                            .padding(.vertical, 8)
+                    } else {
+                        ScrollView {
+                            LazyVStack(alignment: .leading, spacing: 6) {
+                                ForEach(Array(auditRecords.enumerated()), id: \.offset) { _, record in
+                                    HStack(alignment: .top, spacing: 8) {
+                                        Text(record.timestamp.formatted(date: .abbreviated, time: .standard))
+                                            .font(.caption.monospacedDigit())
+                                            .foregroundStyle(.secondary)
+                                            .frame(width: 180, alignment: .leading)
+
+                                        Text(auditLabel(for: record.event))
+                                            .font(.caption)
+                                            .frame(width: 150, alignment: .leading)
+
+                                        Text(metadataSummary(for: record.metadata))
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                    }
+                                    .padding(.vertical, 2)
+                                }
+                            }
+                        }
+                        .frame(minHeight: 140, maxHeight: 220)
+                    }
+                }
+                .padding(10)
+            }
         }
         .padding(20)
-        .frame(minWidth: 520, minHeight: 280, alignment: .topLeading)
+        .frame(minWidth: 720, minHeight: 520, alignment: .topLeading)
+        .onAppear {
+            reloadAuditRecords()
+        }
+        .onChange(of: selectedAuditEventRaw) { _, _ in
+            reloadAuditRecords()
+        }
+        .onChange(of: auditFromDate) { _, _ in
+            reloadAuditRecords()
+        }
     }
 
     private func timeoutLabel(minutes: Int) -> String {
@@ -133,6 +210,24 @@ private struct PreferencesView: View {
             return "1 minuto"
         }
         return "\(minutes) minuti"
+    }
+
+    private func reloadAuditRecords() {
+        let selectedEvent: AuditEvent? = selectedAuditEventRaw == "all" ? nil : AuditEvent(rawValue: selectedAuditEventRaw)
+        auditRecords = AuditTrailService.shared.readRecords(since: auditFromDate, event: selectedEvent, limit: 500)
+    }
+
+    private func auditLabel(for rawEvent: String) -> String {
+        AuditEvent(rawValue: rawEvent)?.displayName ?? rawEvent
+    }
+
+    private func metadataSummary(for metadata: [String: String]) -> String {
+        if metadata.isEmpty {
+            return "-"
+        }
+        return metadata.keys.sorted().map { key in
+            "\(key)=\(metadata[key] ?? "")"
+        }.joined(separator: " · ")
     }
 }
 
@@ -214,6 +309,10 @@ struct ChironeGestionaleApp: App {
             let document = try PatientReportService.shared.makeReportDocument(
                 for: patient,
                 latestNotesCount: reportNotesInReport
+            )
+            AuditTrailService.shared.log(
+                .reportExported,
+                metadata: ["patient": AuditTrailService.shared.redactedIdentifier(for: patient.id)]
             )
             ReportPreviewWindowCoordinator.shared.present(
                 document: document,

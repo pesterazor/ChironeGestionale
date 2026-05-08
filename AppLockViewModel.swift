@@ -28,8 +28,11 @@ final class AppLockViewModel: ObservableObject {
                     self.lastErrorMessage = nil
                     self.isUnlocked = true
                     self.backgroundedAt = nil
+                    AuditTrailService.shared.log(.appUnlocked)
                 } else {
                     self.lastErrorMessage = error?.localizedDescription ?? "Autenticazione non riuscita."
+                    let code = (error as NSError?)?.code ?? -1
+                    AuditTrailService.shared.log(.appLockFailed, metadata: ["code": "\(code)"])
                 }
             }
         }
@@ -53,5 +56,6 @@ final class AppLockViewModel: ObservableObject {
 
     func lock() {
         isUnlocked = false
+        AuditTrailService.shared.log(.appLocked)
     }
 }

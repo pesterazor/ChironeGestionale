@@ -67,6 +67,10 @@ final class PatientWindowCoordinator {
         windows[patient.id] = window
         patients[patient.id] = patient
         setActivePatientID(patient.id)
+        AuditTrailService.shared.log(
+            .patientWindowOpened,
+            metadata: ["patient": AuditTrailService.shared.redactedIdentifier(for: patient.id)]
+        )
         NSApp.activate(ignoringOtherApps: true)
     }
 
@@ -130,6 +134,10 @@ private final class PatientWindowDelegate: NSObject, NSWindowDelegate {
 
     func windowWillClose(_ notification: Notification) {
         PatientWindowUnsavedStateStore.shared.clear(for: patientID)
+        AuditTrailService.shared.log(
+            .patientWindowClosed,
+            metadata: ["patient": AuditTrailService.shared.redactedIdentifier(for: patientID)]
+        )
         onClose(patientID)
     }
 }

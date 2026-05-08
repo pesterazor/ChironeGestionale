@@ -2,6 +2,121 @@ import Foundation
 import SwiftData
 import AppKit
 import UniformTypeIdentifiers
+import CryptoKit
+
+enum AuditEvent: String {
+    case patientWindowOpened = "patient_window_opened"
+    case patientWindowClosed = "patient_window_closed"
+    case reportExported = "report_exported"
+    case backupExported = "backup_exported"
+    case backupRestored = "backup_restored"
+    case appUnlocked = "app_unlocked"
+    case appLockFailed = "app_lock_failed"
+    case appLocked = "app_locked"
+
+    var displayName: String {
+        switch self {
+        case .patientWindowOpened: return "Apertura cartella"
+        case .patientWindowClosed: return "Chiusura cartella"
+        case .reportExported: return "Export referto"
+        case .backupExported: return "Export backup"
+        case .backupRestored: return "Restore backup"
+        case .appUnlocked: return "App sbloccata"
+        case .appLockFailed: return "Sblocco fallito"
+        case .appLocked: return "App bloccata"
+        }
+    }
+}
+
+@MainActor
+final class AuditTrailService {
+    static let shared = AuditTrailService()
+
+    private let fileManager = FileManager.default
+    private let encoder = JSONEncoder()
+    private let logFileURL: URL
+
+    private init() {
+        encoder.dateEncodingStrategy = .iso8601
+
+        let baseDirectory: URL
+        if let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
+            baseDirectory = appSupport.appendingPathComponent("ChironeGestionale", isDirectory: true)
+        } else {
+            baseDirectory = URL(fileURLWithPath: NSTemporaryDirectory())
+                .appendingPathComponent("ChironeGestionale", isDirectory: true)
+        }
+
+        try? fileManager.createDirectory(at: baseDirectory, withIntermediateDirectories: true)
+        logFileURL = baseDirectory.appendingPathComponent("audit.log", isDirectory: false)
+    }
+
+    func log(_ event: AuditEvent, metadata: [String: String] = [:]) {
+        let record = AuditRecord(timestamp: Date(), event: event.rawValue, metadata: metadata)
+
+        guard let data = try? encoder.encode(record),
+              var line = String(data: data, encoding: .utf8)
+        else {
+            return
+        }
+
+        line.append("\n")
+        append(line)
+    }
+
+    func redactedIdentifier(for id: UUID) -> String {
+        let digest = SHA256.hash(data: Data(id.uuidString.utf8))
+        return digest.map { String(format: "%02x", $0) }.joined().prefix(12).description
+    }
+
+    func readRecords(since: Date? = nil, event: AuditEvent? = nil, limit: Int = 500) -> [AuditRecord] {
+        guard let data = try? Data(contentsOf: logFileURL),
+              let content = String(data: data, encoding: .utf8)
+        else {
+            return []
+        }
+
+        var parsed: [AuditRecord] = []
+        for line in content.split(separator: "\n") {
+            guard let lineData = line.data(using: .utf8),
+                  let record = try? JSONDecoder().decode(AuditRecord.self, from: lineData)
+            else {
+                continue
+            }
+
+            if let since, record.timestamp < since { continue }
+            if let event, record.event != event.rawValue { continue }
+            parsed.append(record)
+        }
+
+        let sorted = parsed.sorted { $0.timestamp > $1.timestamp }
+        return Array(sorted.prefix(max(1, limit)))
+    }
+
+    private func append(_ line: String) {
+        guard let payload = line.data(using: .utf8) else { return }
+
+        if !fileManager.fileExists(atPath: logFileURL.path) {
+            fileManager.createFile(atPath: logFileURL.path, contents: payload)
+            return
+        }
+
+        do {
+            let handle = try FileHandle(forWritingTo: logFileURL)
+            defer { try? handle.close() }
+            try handle.seekToEnd()
+            try handle.write(contentsOf: payload)
+        } catch {
+            // Best-effort logging: errors are intentionally ignored.
+        }
+    }
+}
+
+struct AuditRecord: Codable {
+    let timestamp: Date
+    let event: String
+    let metadata: [String: String]
+}
 
 @MainActor
 final class BackupUIService {
@@ -28,8 +143,10 @@ final class BackupUIService {
             let context = ModelContext(modelContainer)
             let backupData = try EncryptedBackupService.shared.exportBackup(from: context, password: password)
             try backupData.write(to: url, options: .atomic)
+            AuditTrailService.shared.log(.backupExported, metadata: ["result": "success"])
             showInfoAlert(title: "Backup completato", message: "Backup cifrato salvato con successo.")
         } catch {
+            AuditTrailService.shared.log(.backupExported, metadata: ["result": "failed"])
             showErrorAlert(title: "Backup non riuscito", error: error)
         }
     }
@@ -65,10 +182,13 @@ final class BackupUIService {
                 backupData: backupData,
                 replaceExisting: true
             )
+            AuditTrailService.shared.log(.backupRestored, metadata: ["result": "success"])
             showInfoAlert(title: "Ripristino completato", message: "Dati clinici ripristinati correttamente.")
         } catch EncryptedBackupError.invalidPassword {
+            AuditTrailService.shared.log(.backupRestored, metadata: ["result": "failed_invalid_password"])
             showInfoAlert(title: "Password errata", message: "La password del backup non è corretta.")
         } catch {
+            AuditTrailService.shared.log(.backupRestored, metadata: ["result": "failed"])
             showErrorAlert(title: "Ripristino non riuscito", error: error)
         }
     }

@@ -92,9 +92,9 @@ Portare Chirone da "sicuro tecnicamente" a "compliant e verificabile operativame
 
 ### Sottopunti essenziali
 - [ ] Audit trail tecnico/clinico
-  - [ ] Eventi minimi: apertura/chiusura cartella, export referto, backup/restore, lock/unlock.
-  - [ ] Nessuna PHI in chiaro nei log.
-  - [ ] Viewer interno audit (filtro per data/tipo evento).
+  - [x] Eventi minimi: apertura/chiusura cartella, export referto, backup/restore, lock/unlock.
+  - [x] Nessuna PHI in chiaro nei log.
+  - [x] Viewer interno audit (filtro per data/tipo evento).
 - [ ] Compliance workflow
   - [ ] Collegare milestone P0/P1/P2 del file `GDPR_Roadmap.md` a task implementativi nel codice.
   - [ ] Export per diritto di accesso/portabilità (formato strutturato).
@@ -170,6 +170,9 @@ Aggiungere funzioni "wow" realmente utili al lavoro clinico, evitando complessit
 - [ ] Dashboard outcome longitudinali e aderenza monitoraggi.
 - [ ] Multi-professionista con ruoli granulari e segregazione accessi.
 - [ ] Sincronizzazione multi-dispositivo con modello zero-knowledge.
+- [ ] Export CSV del viewer audit (solo metadati redatti).
+- [ ] Rotazione e retention audit log (policy temporale + purge controllata).
+- [ ] Audit tamper-evident (hash chain dei record locali).
 
 ---
 

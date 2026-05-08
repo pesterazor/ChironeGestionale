@@ -511,7 +511,6 @@ final class BloodTestsNSTableView: NSTableView, NSMenuDelegate {
     }
 
     override func rightMouseDown(with event: NSEvent) {
-        let point = convert(event.locationInWindow, from: nil)
         // Header right-click is handled by BloodTestsNSTableHeaderView.
         super.rightMouseDown(with: event)
     }
