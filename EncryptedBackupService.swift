@@ -497,7 +497,7 @@ final class EncryptedBackupService {
     }
 }
 
-private extension JSONEncoder {
+extension JSONEncoder {
     static var chirone: JSONEncoder {
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
@@ -506,7 +506,7 @@ private extension JSONEncoder {
     }
 }
 
-private extension JSONDecoder {
+extension JSONDecoder {
     static var chirone: JSONDecoder {
         let decoder = JSONDecoder()
         decoder.dateDecodingStrategy = .iso8601

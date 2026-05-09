@@ -35,7 +35,7 @@ private final class ClinicalAlertService {
     func alertsForPatientOpening(_ patient: Patient) -> [ClinicalAlert] {
         _ = patient
         // Placeholder intentionally silent.
-        []
+        return [ClinicalAlert]()
     }
 }
 

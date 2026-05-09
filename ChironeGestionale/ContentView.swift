@@ -47,9 +47,11 @@ struct ContentView: View {
 
     @State private var sidebarSortOption: SidebarSortOption = .name
     @State private var commandPaletteQuery = ""
+    @State private var didAutoOpenNewPatientSheetForUITest = false
     @State private var commandPaletteOpenedAt: Date?
 
     @FocusState private var isNewPatientBirthPlaceFocused: Bool
+    private let isUITestWindowRestoreDisabled = ProcessInfo.processInfo.arguments.contains("-UITEST_DISABLE_WINDOW_RESTORE")
 
     private var commandPaletteActions: [CommandPaletteAction] {
         [
@@ -216,6 +218,7 @@ struct ContentView: View {
                 } label: {
                     Label("Nuovo paziente", systemImage: "plus")
                 }
+                .keyboardShortcut("n", modifiers: [.command])
                 .accessibilityIdentifier("new_patient_button")
 
                 Button(action: openSelectedPatientWindow) {
@@ -235,9 +238,17 @@ struct ContentView: View {
             commandPaletteSheet
         }
         .onAppear {
+            if ProcessInfo.processInfo.arguments.contains("-UITEST_AUTO_OPEN_NEW_PATIENT") &&
+                !didAutoOpenNewPatientSheetForUITest {
+                didAutoOpenNewPatientSheetForUITest = true
+                showAddPatientSheet = true
+            }
+
             if !didAttemptWindowRestore {
                 didAttemptWindowRestore = true
-                PatientWindowCoordinator.shared.restoreOpenWindows(modelContainer: modelContext.container)
+                if !isUITestWindowRestoreDisabled {
+                    PatientWindowCoordinator.shared.restoreOpenWindows(modelContainer: modelContext.container)
+                }
             }
 
             if selectedPatientID == nil {

@@ -8,6 +8,32 @@
 import XCTest
 
 final class ChironeGestionaleUITests: XCTestCase {
+    @MainActor
+    private func launchAppForClinicalFlow() -> XCUIApplication {
+        let app = XCUIApplication()
+        app.launchArguments.append("-UITEST_DISABLE_LOCK")
+        app.launchArguments.append("-UITEST_AUTO_OPEN_NEW_PATIENT")
+        app.launchArguments.append("-UITEST_DISABLE_WINDOW_RESTORE")
+        app.launch()
+        return app
+    }
+
+    @MainActor
+    private func waitForNewPatientSheet(in app: XCUIApplication, file: StaticString = #filePath, line: UInt = #line) {
+        let firstName = app.textFields["new_patient_first_name"]
+        if firstName.waitForExistence(timeout: 8) {
+            return
+        }
+
+        let newPatientButton = app.buttons["new_patient_button"]
+        if newPatientButton.waitForExistence(timeout: 2) {
+            newPatientButton.click()
+        } else {
+            app.typeKey("n", modifierFlags: [.command])
+        }
+
+        XCTAssertTrue(firstName.waitForExistence(timeout: 8), file: file, line: line)
+    }
 
     override func setUpWithError() throws {
         // Put setup code here. This method is called before the invocation of each test method in the class.
@@ -24,14 +50,10 @@ final class ChironeGestionaleUITests: XCTestCase {
 
     @MainActor
     func testBloodTestsCellToCellEditingEnablesSave() throws {
-        let app = XCUIApplication()
-        app.launchArguments.append("-UITEST_DISABLE_LOCK")
-        app.launch()
-
-        app.buttons["new_patient_button"].click()
+        let app = launchAppForClinicalFlow()
+        waitForNewPatientSheet(in: app)
 
         let firstName = app.textFields["new_patient_first_name"]
-        XCTAssertTrue(firstName.waitForExistence(timeout: 3))
         firstName.click()
         firstName.typeText("Mario")
 
@@ -76,14 +98,10 @@ final class ChironeGestionaleUITests: XCTestCase {
 
     @MainActor
     func testCompleteVisitFlowCoreSections() throws {
-        let app = XCUIApplication()
-        app.launchArguments.append("-UITEST_DISABLE_LOCK")
-        app.launch()
-
-        app.buttons["new_patient_button"].click()
+        let app = launchAppForClinicalFlow()
+        waitForNewPatientSheet(in: app)
 
         let firstName = app.textFields["new_patient_first_name"]
-        XCTAssertTrue(firstName.waitForExistence(timeout: 3))
         firstName.click()
         firstName.typeText("Giulia")
 
@@ -100,7 +118,7 @@ final class ChironeGestionaleUITests: XCTestCase {
         app.buttons["create_patient_button"].click()
         app.buttons["open_patient_clinical_button"].click()
 
-        let newNoteText = app.textViews["clinical_new_note_text"]
+        let newNoteText = app.textViews["clinical_new_note_text"].firstMatch
         XCTAssertTrue(newNoteText.waitForExistence(timeout: 5))
         newNoteText.click()
         newNoteText.typeText("Paziente collaborante. Sonno migliorato rispetto al controllo precedente.")
@@ -151,14 +169,10 @@ final class ChironeGestionaleUITests: XCTestCase {
 
     @MainActor
     func testReportPreviewOpensFromActiveClinicalWindow() throws {
-        let app = XCUIApplication()
-        app.launchArguments.append("-UITEST_DISABLE_LOCK")
-        app.launch()
-
-        app.buttons["new_patient_button"].click()
+        let app = launchAppForClinicalFlow()
+        waitForNewPatientSheet(in: app)
 
         let firstName = app.textFields["new_patient_first_name"]
-        XCTAssertTrue(firstName.waitForExistence(timeout: 3))
         firstName.click()
         firstName.typeText("Marco")
 

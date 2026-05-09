@@ -125,6 +125,7 @@ final class ChironeGestionaleTests: XCTestCase {
         XCTAssertEqual(ordered.last?.id, oldest.id)
     }
 
+    @MainActor
     func testEncryptedBackupEnvelopeMetadataAndCountsAreConsistent() throws {
         let schema = Schema([Patient.self, ClinicalNote.self, TherapyMedication.self])
         let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
@@ -162,6 +163,7 @@ final class ChironeGestionaleTests: XCTestCase {
         XCTAssertEqual(envelope.metadata.recordCounts.therapyItems, 2)
     }
 
+    @MainActor
     func testEncryptedBackupRestoreRejectsUnsupportedSchemaVersion() throws {
         let schema = Schema([Patient.self, ClinicalNote.self, TherapyMedication.self])
         let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
@@ -207,6 +209,7 @@ final class ChironeGestionaleTests: XCTestCase {
         }
     }
 
+    @MainActor
     func testEncryptedBackupRestoreRejectsMismatchedRecordCounts() throws {
         let schema = Schema([Patient.self, ClinicalNote.self, TherapyMedication.self])
         let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
