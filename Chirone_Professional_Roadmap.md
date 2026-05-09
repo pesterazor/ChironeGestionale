@@ -139,12 +139,16 @@ Gate:
   - [x] Estendere command palette ai comandi clinici avanzati in finestra paziente.
   - [x] Tracciamento metrica locale command palette (azione + latenza open→execute, no PHI).
   - [x] Mini dashboard KPI in Preferenze (mediana latenza + top azioni ultimi 30 giorni).
+  - [x] Quick Capture Clinico globale (`⌘⌥Space`) sulla cartella attiva.
+  - [x] Safe Autosave Draft nota clinica con recupero post-crash/chiusura inattesa.
 - [ ] Multi-window impeccabile
   - [x] Stato menu sempre coerente.
   - [x] Ripristino sessione finestre.
 - [ ] Design professionale minimal
   - [ ] Gerarchia visiva uniforme.
   - [ ] Micro-feedback coerente (save/validazioni/warning).
+  - [x] Preparazione infrastruttura alert clinici all'apertura scheda (placeholder warning panel, inizialmente silente).
+  - [ ] Integrazione futura notifiche native macOS (`UserNotifications`) per monitoraggi ematici periodici (es. litiemia, valproatemia, emocromo con formula, clozapinemia).
 
 ---
 
@@ -211,6 +215,8 @@ Legenda stato:
 - [ ] Export CSV viewer audit (metadati redatti).
 - [ ] Rotazione e retention audit log (policy temporale + purge).
 - [ ] Audit tamper-evident (hash chain locale).
+- [ ] Engine regole monitoraggio farmaco-correlato con trigger temporali e soglie configurabili.
+- [ ] Centro notifiche cliniche con storico alert paziente e stato (attivo/sospeso/risolto).
 
 ---
 

@@ -434,6 +434,12 @@ struct ChironeGestionaleApp: App {
                     commandPaletteState.present()
                 }
                 .keyboardShortcut("k", modifiers: [.command])
+
+                Button("Quick Capture Clinico…") {
+                    requestQuickClinicalCapture()
+                }
+                .keyboardShortcut(.space, modifiers: [.command, .option])
+                .disabled(!printCommandState.canPrintReport)
             }
 
             CommandGroup(before: .printItem) {
@@ -532,5 +538,18 @@ struct ChironeGestionaleApp: App {
         }
 
         backupUIService.exportPatientPortabilityData(patient: patient)
+    }
+
+    private func requestQuickClinicalCapture() {
+        guard let patient = PatientWindowCoordinator.shared.activePatient() else {
+            NSSound.beep()
+            return
+        }
+
+        NotificationCenter.default.post(
+            name: .quickClinicalCaptureRequested,
+            object: self,
+            userInfo: ["patientID": patient.id.uuidString]
+        )
     }
 }

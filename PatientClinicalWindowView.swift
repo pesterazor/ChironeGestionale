@@ -1,6 +1,44 @@
 import SwiftUI
 import SwiftData
 
+private struct ClinicalAlert: Identifiable, Equatable {
+    enum Severity: String {
+        case info
+        case warning
+        case critical
+    }
+
+    let id: UUID
+    let title: String
+    let message: String
+    let severity: Severity
+
+    init(
+        id: UUID = UUID(),
+        title: String,
+        message: String,
+        severity: Severity
+    ) {
+        self.id = id
+        self.title = title
+        self.message = message
+        self.severity = severity
+    }
+}
+
+@MainActor
+private final class ClinicalAlertService {
+    static let shared = ClinicalAlertService()
+
+    private init() {}
+
+    func alertsForPatientOpening(_ patient: Patient) -> [ClinicalAlert] {
+        _ = patient
+        // Placeholder intentionally silent.
+        []
+    }
+}
+
 private struct TherapyDraftItem: Identifiable, Equatable {
     let id: UUID
     let sourceID: UUID?
@@ -98,6 +136,46 @@ private struct OrganFunctionsSummaryView: View {
             RoundedRectangle(cornerRadius: 10)
                 .strokeBorder(Color.secondary.opacity(0.15))
         )
+    }
+}
+
+private struct ClinicalAlertsPanelView: View {
+    let alerts: [ClinicalAlert]
+
+    private func accentColor(for severity: ClinicalAlert.Severity) -> Color {
+        switch severity {
+        case .info:
+            return .blue
+        case .warning:
+            return .orange
+        case .critical:
+            return .red
+        }
+    }
+
+    var body: some View {
+        GroupBox("Avvisi clinici") {
+            VStack(alignment: .leading, spacing: 10) {
+                ForEach(alerts) { alert in
+                    HStack(alignment: .top, spacing: 10) {
+                        Circle()
+                            .fill(accentColor(for: alert.severity))
+                            .frame(width: 8, height: 8)
+                            .padding(.top, 5)
+                            .accessibilityHidden(true)
+
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(alert.title)
+                                .font(.subheadline.weight(.semibold))
+                            Text(alert.message)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
     }
 }
 
@@ -287,6 +365,11 @@ struct PatientClinicalWindowView: View {
     @State private var pendingTherapyMedicationFocusID: UUID?
     @State private var hasUnsavedClinicalDrafts = false
     @State private var hasUnsavedBloodTestsDrafts = false
+    @State private var openingClinicalAlerts: [ClinicalAlert] = []
+    @State private var isPresentingQuickCapture = false
+    @State private var quickCaptureText = ""
+    @State private var quickCaptureWellbeing = 5
+    @State private var quickCaptureDate = Date()
 
     private var heartStatusBinding: Binding<String> {
         Binding(
@@ -367,6 +450,10 @@ struct PatientClinicalWindowView: View {
 
     private func updateUnsavedWindowState() {
         PatientWindowUnsavedStateStore.shared.set(hasUnsavedChangesInWindow, for: patient.id)
+    }
+
+    private func refreshOpeningClinicalAlerts() {
+        openingClinicalAlerts = ClinicalAlertService.shared.alertsForPatientOpening(patient)
     }
 
     private func loadTherapyDraft() {
@@ -511,6 +598,32 @@ struct PatientClinicalWindowView: View {
         loadTherapyDraft()
     }
 
+    private func openQuickClinicalCapture() {
+        quickCaptureText = ""
+        quickCaptureWellbeing = 5
+        quickCaptureDate = .now
+        isPresentingQuickCapture = true
+    }
+
+    private func saveQuickClinicalCapture() {
+        let trimmed = quickCaptureText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+
+        let note = ClinicalNote(
+            content: "",
+            wellbeingScore: quickCaptureWellbeing,
+            createdAt: quickCaptureDate,
+            updatedAt: quickCaptureDate,
+            patient: patient
+        )
+        note.protectContent(trimmed)
+        modelContext.insert(note)
+        patient.clinicalNotes.append(note)
+        patient.updatedAt = .now
+
+        isPresentingQuickCapture = false
+    }
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
@@ -535,6 +648,10 @@ struct PatientClinicalWindowView: View {
                     ) {
                         patient.updatedAt = .now
                     }
+                }
+
+                if !openingClinicalAlerts.isEmpty {
+                    ClinicalAlertsPanelView(alerts: openingClinicalAlerts)
                 }
 
                 GroupBox("Dati clinici") {
@@ -701,10 +818,12 @@ struct PatientClinicalWindowView: View {
             if patient.heartFunctionStatus == nil { patient.heartFunctionStatus = "green" }
             if patient.liverFunctionStatus == nil { patient.liverFunctionStatus = "green" }
             if patient.kidneyFunctionStatus == nil { patient.kidneyFunctionStatus = "green" }
+            refreshOpeningClinicalAlerts()
             loadTherapyDraft()
             updateUnsavedWindowState()
         }
         .onChange(of: patient.id) { _, _ in
+            refreshOpeningClinicalAlerts()
             loadTherapyDraft()
             hasUnsavedClinicalDrafts = false
             hasUnsavedBloodTestsDrafts = false
@@ -729,6 +848,67 @@ struct PatientClinicalWindowView: View {
         .onReceive(NotificationCenter.default.publisher(for: .commandPaletteSaveTherapyRequested)) { notification in
             guard isNotificationForThisPatient(notification) else { return }
             saveTherapyDraft()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .quickClinicalCaptureRequested)) { notification in
+            guard isNotificationForThisPatient(notification) else { return }
+            openQuickClinicalCapture()
+        }
+        .sheet(isPresented: $isPresentingQuickCapture) {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Quick Capture Clinico")
+                    .font(.title3.weight(.semibold))
+
+                Text("Paziente: \(patient.fullName)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+
+                ZStack(alignment: .topLeading) {
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color(nsColor: .textBackgroundColor))
+
+                    TextEditor(text: $quickCaptureText)
+                        .font(.body)
+                        .scrollContentBackground(.hidden)
+                        .padding(.horizontal, 4)
+                        .padding(.vertical, 6)
+                }
+                .frame(minHeight: 140)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .strokeBorder(Color.secondary.opacity(0.25))
+                )
+
+                HStack(spacing: 12) {
+                    DatePicker(
+                        "Data e ora",
+                        selection: $quickCaptureDate,
+                        displayedComponents: [.date, .hourAndMinute]
+                    )
+                    .datePickerStyle(.compact)
+
+                    Stepper(value: $quickCaptureWellbeing, in: 1...10) {
+                        Text("Benessere \(quickCaptureWellbeing)/10")
+                            .monospacedDigit()
+                    }
+                    .frame(minWidth: 170)
+                }
+
+                HStack {
+                    Spacer()
+
+                    Button("Annulla") {
+                        isPresentingQuickCapture = false
+                    }
+
+                    Button("Salva nota") {
+                        saveQuickClinicalCapture()
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .disabled(quickCaptureText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+            .padding(18)
+            .frame(minWidth: 560, minHeight: 340)
         }
     }
 }

@@ -9,6 +9,7 @@ extension Notification.Name {
     static let commandPaletteSaveTherapyRequested = Notification.Name("commandPaletteSaveTherapyRequested")
     static let commandPaletteSaveBloodTestsRequested = Notification.Name("commandPaletteSaveBloodTestsRequested")
     static let commandPaletteSaveClinicalNoteRequested = Notification.Name("commandPaletteSaveClinicalNoteRequested")
+    static let quickClinicalCaptureRequested = Notification.Name("quickClinicalCaptureRequested")
 }
 
 final class PatientWindowCoordinator {

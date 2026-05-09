@@ -1,6 +1,83 @@
 import SwiftUI
 import SwiftData
 
+@MainActor
+private final class ClinicalDraftAutosaveStore {
+    static let shared = ClinicalDraftAutosaveStore()
+
+    private struct StoredDraft: Codable {
+        let encryptedContent: String?
+        let plainFallbackContent: String
+        let wellbeing: Int
+        let noteDate: Date
+    }
+
+    struct RestoredDraft {
+        let content: String
+        let wellbeing: Int
+        let noteDate: Date
+    }
+
+    private let storageKeyPrefix = "clinicalDraftAutosave.patient."
+    private let defaults = UserDefaults.standard
+    private let encoder: JSONEncoder
+    private let decoder: JSONDecoder
+
+    private init() {
+        encoder = JSONEncoder()
+        decoder = JSONDecoder()
+        encoder.dateEncodingStrategy = .iso8601
+        decoder.dateDecodingStrategy = .iso8601
+    }
+
+    func saveDraft(patientID: UUID, content: String, wellbeing: Int, noteDate: Date) {
+        let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed.isEmpty && wellbeing == 5 {
+            clearDraft(patientID: patientID)
+            return
+        }
+
+        let payload = StoredDraft(
+            encryptedContent: SecureDataCipher.shared.encrypt(trimmed),
+            plainFallbackContent: trimmed,
+            wellbeing: min(max(wellbeing, 1), 10),
+            noteDate: noteDate
+        )
+        guard let data = try? encoder.encode(payload) else { return }
+        defaults.set(data, forKey: key(for: patientID))
+    }
+
+    func loadDraft(patientID: UUID) -> RestoredDraft? {
+        guard let data = defaults.data(forKey: key(for: patientID)),
+              let decoded = try? decoder.decode(StoredDraft.self, from: data)
+        else {
+            return nil
+        }
+
+        let content: String
+        if let encrypted = decoded.encryptedContent,
+           let decrypted = SecureDataCipher.shared.decrypt(encrypted) {
+            content = decrypted
+        } else {
+            content = decoded.plainFallbackContent
+        }
+
+        return RestoredDraft(
+            content: content,
+            wellbeing: min(max(decoded.wellbeing, 1), 10),
+            noteDate: decoded.noteDate
+        )
+    }
+
+    func clearDraft(patientID: UUID) {
+        defaults.removeObject(forKey: key(for: patientID))
+    }
+
+    private func key(for patientID: UUID) -> String {
+        storageKeyPrefix + patientID.uuidString
+    }
+}
+
 private func wellbeingColor(for score: Int) -> Color {
     switch score {
     case ..<4:
@@ -403,10 +480,21 @@ struct ClinicalUpdatesSectionView: View {
     @State private var timelineNotes: [ClinicalNote] = []
     @State private var totalNotesCount = 0
     @State private var editingNoteIDs: Set<UUID> = []
+    @State private var didRestoreDraft = false
+    @State private var autosaveTask: Task<Void, Never>?
+    @State private var lastAutosaveSignature = ""
+    @State private var lastAutosavedSnapshot: DraftSnapshot?
 
     let onDraftStateChange: (Bool) -> Void
 
     private let notesPageSize = 5
+    private let autosaveDebounceNanoseconds: UInt64 = 10_000_000_000
+
+    private struct DraftSnapshot {
+        let content: String
+        let wellbeing: Int
+        let noteDate: Date
+    }
     private var hasUnsavedDrafts: Bool {
         !newNoteContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !editingNoteIDs.isEmpty
     }
@@ -491,9 +579,91 @@ struct ClinicalUpdatesSectionView: View {
         newNoteContent = ""
         newNoteWellbeing = 5
         newNoteDate = .now
+        ClinicalDraftAutosaveStore.shared.clearDraft(patientID: patient.id)
+        autosaveTask?.cancel()
+        autosaveTask = nil
+        lastAutosaveSignature = ""
+        lastAutosavedSnapshot = nil
+        didRestoreDraft = false
         notesPageOffset = 0
         refreshTimelineNotes()
         onDraftStateChange(hasUnsavedDrafts)
+    }
+
+    private func restoreDraftIfAvailable() {
+        guard let restored = ClinicalDraftAutosaveStore.shared.loadDraft(patientID: patient.id) else {
+            didRestoreDraft = false
+            return
+        }
+
+        newNoteContent = restored.content
+        newNoteWellbeing = restored.wellbeing
+        newNoteDate = restored.noteDate
+        didRestoreDraft = !restored.content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        lastAutosaveSignature = autosaveSignature()
+        lastAutosavedSnapshot = DraftSnapshot(
+            content: newNoteContent.trimmingCharacters(in: .whitespacesAndNewlines),
+            wellbeing: newNoteWellbeing,
+            noteDate: newNoteDate
+        )
+    }
+
+    private func autosaveSignature() -> String {
+        let trimmed = newNoteContent.trimmingCharacters(in: .whitespacesAndNewlines)
+        return "\(trimmed)|\(newNoteWellbeing)|\(newNoteDate.timeIntervalSince1970)"
+    }
+
+    private func autosaveDraftNow() {
+        let signature = autosaveSignature()
+        guard signature != lastAutosaveSignature else { return }
+        let currentSnapshot = DraftSnapshot(
+            content: newNoteContent.trimmingCharacters(in: .whitespacesAndNewlines),
+            wellbeing: newNoteWellbeing,
+            noteDate: newNoteDate
+        )
+        guard isSignificantDraftChange(from: lastAutosavedSnapshot, to: currentSnapshot) else { return }
+        ClinicalDraftAutosaveStore.shared.saveDraft(
+            patientID: patient.id,
+            content: newNoteContent,
+            wellbeing: newNoteWellbeing,
+            noteDate: newNoteDate
+        )
+        lastAutosaveSignature = signature
+        lastAutosavedSnapshot = currentSnapshot
+    }
+
+    private func scheduleAutosaveDraft() {
+        autosaveTask?.cancel()
+        autosaveTask = Task { @MainActor in
+            try? await Task.sleep(nanoseconds: autosaveDebounceNanoseconds)
+            guard !Task.isCancelled else { return }
+            autosaveDraftNow()
+        }
+    }
+
+    private func isSignificantDraftChange(from previous: DraftSnapshot?, to current: DraftSnapshot) -> Bool {
+        guard let previous else {
+            return !current.content.isEmpty
+        }
+
+        if previous.wellbeing != current.wellbeing {
+            return true
+        }
+
+        if abs(current.noteDate.timeIntervalSince(previous.noteDate)) >= 60 {
+            return true
+        }
+
+        if previous.content.isEmpty != current.content.isEmpty {
+            return true
+        }
+
+        let lengthDelta = abs(current.content.count - previous.content.count)
+        if lengthDelta >= 20 {
+            return true
+        }
+
+        return false
     }
 
     private func isNotificationForThisPatient(_ notification: Notification) -> Bool {
@@ -528,6 +698,12 @@ struct ClinicalUpdatesSectionView: View {
     var body: some View {
         GroupBox("Aggiornamenti clinici") {
             VStack(alignment: .leading, spacing: 14) {
+                if didRestoreDraft {
+                    Label("Bozza recuperata automaticamente", systemImage: "clock.arrow.trianglehead.counterclockwise.rotate.90")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+
                 NewClinicalNoteComposerView(
                     content: $newNoteContent,
                     wellbeing: $newNoteWellbeing,
@@ -562,16 +738,24 @@ struct ClinicalUpdatesSectionView: View {
         .onAppear {
             notesPageOffset = 0
             editingNoteIDs.removeAll()
-            newNoteDate = .now
+            restoreDraftIfAvailable()
+            if newNoteContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                newNoteDate = .now
+            }
             refreshTimelineNotes()
             onDraftStateChange(hasUnsavedDrafts)
         }
         .onChange(of: patient.id) { _, _ in
+            autosaveTask?.cancel()
+            autosaveTask = nil
+            lastAutosaveSignature = ""
+            lastAutosavedSnapshot = nil
             notesPageOffset = 0
             editingNoteIDs.removeAll()
             newNoteContent = ""
             newNoteWellbeing = 5
             newNoteDate = .now
+            restoreDraftIfAvailable()
             refreshTimelineNotes()
             onDraftStateChange(hasUnsavedDrafts)
         }
@@ -581,9 +765,21 @@ struct ClinicalUpdatesSectionView: View {
             onDraftStateChange(hasUnsavedDrafts)
         }
         .onChange(of: newNoteContent) { _, _ in
+            scheduleAutosaveDraft()
+            onDraftStateChange(hasUnsavedDrafts)
+        }
+        .onChange(of: newNoteWellbeing) { _, _ in
+            scheduleAutosaveDraft()
+            onDraftStateChange(hasUnsavedDrafts)
+        }
+        .onChange(of: newNoteDate) { _, _ in
+            scheduleAutosaveDraft()
             onDraftStateChange(hasUnsavedDrafts)
         }
         .onDisappear {
+            autosaveTask?.cancel()
+            autosaveTask = nil
+            autosaveDraftNow()
             onDraftStateChange(false)
         }
         .onReceive(NotificationCenter.default.publisher(for: .commandPaletteSaveClinicalNoteRequested)) { notification in
