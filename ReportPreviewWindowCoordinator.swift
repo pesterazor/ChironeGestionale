@@ -32,6 +32,7 @@ private struct ReportPreviewContentView: View {
             HStack {
                 Text("Anteprima referto")
                     .font(.headline)
+                    .accessibilityIdentifier("report_preview_title")
                 Spacer()
                 Text(title)
                     .font(.subheadline)
@@ -49,9 +50,12 @@ private struct ReportPreviewContentView: View {
 
             HStack {
                 Button("Chiudi") { onClose() }
+                    .accessibilityIdentifier("report_preview_close_button")
                 Spacer()
                 Button("Salva") { onSave() }
+                    .accessibilityIdentifier("report_preview_save_button")
                 Button("Stampa") { onPrint() }
+                    .accessibilityIdentifier("report_preview_print_button")
                     .buttonStyle(.borderedProminent)
             }
             .padding(16)

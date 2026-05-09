@@ -54,6 +54,8 @@ private struct PreferencesView: View {
     @State private var selectedAuditEventRaw = "all"
     @State private var auditFromDate = Calendar.current.date(byAdding: .day, value: -7, to: Date()) ?? Date()
     @State private var auditRecords: [AuditRecord] = []
+    @State private var auditRetentionDays = AuditTrailService.shared.retentionDays
+    @State private var auditMaxRecords = AuditTrailService.shared.maxRecords
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -160,6 +162,35 @@ private struct PreferencesView: View {
                         Spacer()
                     }
 
+                    HStack(spacing: 12) {
+                        Stepper(value: $auditRetentionDays, in: 30...3650, step: 30) {
+                            Text("Retention: \(auditRetentionDays) giorni")
+                                .font(.caption)
+                        }
+                        .frame(width: 220, alignment: .leading)
+
+                        Stepper(value: $auditMaxRecords, in: 500...200_000, step: 500) {
+                            Text("Cap log: \(auditMaxRecords)")
+                                .font(.caption)
+                        }
+                        .frame(width: 220, alignment: .leading)
+
+                        Button("Applica policy") {
+                            AuditTrailService.shared.updateRetentionPolicy(
+                                retentionDays: auditRetentionDays,
+                                maxRecords: auditMaxRecords
+                            )
+                            reloadAuditRecords()
+                        }
+                        .buttonStyle(.bordered)
+
+                        Button("Purge ora") {
+                            AuditTrailService.shared.purgeAuditLogNow()
+                            reloadAuditRecords()
+                        }
+                        .buttonStyle(.bordered)
+                    }
+
                     if auditRecords.isEmpty {
                         Text("Nessun evento audit nel filtro selezionato.")
                             .foregroundStyle(.secondary)
@@ -196,6 +227,8 @@ private struct PreferencesView: View {
         .padding(20)
         .frame(minWidth: 720, minHeight: 520, alignment: .topLeading)
         .onAppear {
+            auditRetentionDays = AuditTrailService.shared.retentionDays
+            auditMaxRecords = AuditTrailService.shared.maxRecords
             reloadAuditRecords()
         }
         .onChange(of: selectedAuditEventRaw) { _, _ in

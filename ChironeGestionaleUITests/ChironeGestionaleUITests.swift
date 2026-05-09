@@ -73,4 +73,114 @@ final class ChironeGestionaleUITests: XCTestCase {
             XCUIApplication().launch()
         }
     }
+
+    @MainActor
+    func testCompleteVisitFlowCoreSections() throws {
+        let app = XCUIApplication()
+        app.launchArguments.append("-UITEST_DISABLE_LOCK")
+        app.launch()
+
+        app.buttons["new_patient_button"].click()
+
+        let firstName = app.textFields["new_patient_first_name"]
+        XCTAssertTrue(firstName.waitForExistence(timeout: 3))
+        firstName.click()
+        firstName.typeText("Giulia")
+
+        let lastName = app.textFields["new_patient_last_name"]
+        XCTAssertTrue(lastName.waitForExistence(timeout: 3))
+        lastName.click()
+        lastName.typeText("Bianchi")
+
+        let birthPlace = app.textFields["new_patient_birth_place"]
+        XCTAssertTrue(birthPlace.waitForExistence(timeout: 3))
+        birthPlace.click()
+        birthPlace.typeText("Milano")
+
+        app.buttons["create_patient_button"].click()
+        app.buttons["open_patient_clinical_button"].click()
+
+        let newNoteText = app.textViews["clinical_new_note_text"]
+        XCTAssertTrue(newNoteText.waitForExistence(timeout: 5))
+        newNoteText.click()
+        newNoteText.typeText("Paziente collaborante. Sonno migliorato rispetto al controllo precedente.")
+
+        let saveNote = app.buttons["clinical_save_note_button"]
+        XCTAssertTrue(saveNote.waitForExistence(timeout: 2))
+        XCTAssertTrue(saveNote.isEnabled)
+        saveNote.click()
+
+        let addTherapy = app.buttons["therapy_add_medication_button"]
+        XCTAssertTrue(addTherapy.waitForExistence(timeout: 3))
+        addTherapy.click()
+
+        let therapyMedicationField = app.textFields["Farmaco"].firstMatch
+        XCTAssertTrue(therapyMedicationField.waitForExistence(timeout: 3))
+        therapyMedicationField.click()
+        therapyMedicationField.typeText("Sertralina")
+
+        let therapyDosageField = app.textFields["Dosaggio"].firstMatch
+        XCTAssertTrue(therapyDosageField.waitForExistence(timeout: 3))
+        therapyDosageField.click()
+        therapyDosageField.typeText("50mg")
+
+        let therapyPosologyField = app.textFields["Posologia"].firstMatch
+        XCTAssertTrue(therapyPosologyField.waitForExistence(timeout: 3))
+        therapyPosologyField.click()
+        therapyPosologyField.typeText("1 cp mattino")
+
+        let therapySave = app.buttons["therapy_save_button"]
+        XCTAssertTrue(therapySave.waitForExistence(timeout: 3))
+        XCTAssertTrue(therapySave.isEnabled)
+        therapySave.click()
+
+        let addDateButton = app.buttons["bloodtests_add_date_button"]
+        XCTAssertTrue(addDateButton.waitForExistence(timeout: 5))
+        addDateButton.click()
+
+        let firstCell = app.textFields["bloodtests_cell_row_0_col_0"]
+        XCTAssertTrue(firstCell.waitForExistence(timeout: 5))
+        firstCell.click()
+        firstCell.typeText("98")
+
+        let bloodTestsSave = app.buttons["bloodtests_save_button"]
+        XCTAssertTrue(bloodTestsSave.waitForExistence(timeout: 3))
+        XCTAssertTrue(bloodTestsSave.isEnabled)
+        bloodTestsSave.click()
+    }
+
+    @MainActor
+    func testReportPreviewOpensFromActiveClinicalWindow() throws {
+        let app = XCUIApplication()
+        app.launchArguments.append("-UITEST_DISABLE_LOCK")
+        app.launch()
+
+        app.buttons["new_patient_button"].click()
+
+        let firstName = app.textFields["new_patient_first_name"]
+        XCTAssertTrue(firstName.waitForExistence(timeout: 3))
+        firstName.click()
+        firstName.typeText("Marco")
+
+        let lastName = app.textFields["new_patient_last_name"]
+        XCTAssertTrue(lastName.waitForExistence(timeout: 3))
+        lastName.click()
+        lastName.typeText("Neri")
+
+        let birthPlace = app.textFields["new_patient_birth_place"]
+        XCTAssertTrue(birthPlace.waitForExistence(timeout: 3))
+        birthPlace.click()
+        birthPlace.typeText("Roma")
+
+        app.buttons["create_patient_button"].click()
+        app.buttons["open_patient_clinical_button"].click()
+
+        app.typeKey("p", modifierFlags: [.command])
+
+        let previewTitle = app.staticTexts["report_preview_title"]
+        XCTAssertTrue(previewTitle.waitForExistence(timeout: 5))
+
+        let printButton = app.buttons["report_preview_print_button"]
+        XCTAssertTrue(printButton.waitForExistence(timeout: 3))
+    }
 }

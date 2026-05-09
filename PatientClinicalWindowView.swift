@@ -646,11 +646,15 @@ struct PatientClinicalWindowView: View {
                             } label: {
                                 Label("Aggiungi farmaco", systemImage: "plus")
                             }
+                            .accessibilityIdentifier("therapy_add_medication_button")
+                            .keyboardShortcut("n", modifiers: [.command, .option])
 
                             Button("Salva terapia") {
                                 saveTherapyDraft()
                             }
                             .buttonStyle(.borderedProminent)
+                            .accessibilityIdentifier("therapy_save_button")
+                            .keyboardShortcut("t", modifiers: [.command, .option])
                             .disabled(!hasUnsavedTherapyChanges)
                         }
                     }

@@ -34,14 +34,25 @@ enum AuditEvent: String {
 final class AuditTrailService {
     static let shared = AuditTrailService()
 
+    private enum Settings {
+        static let retentionDaysKey = "audit.retentionDays"
+        static let maxRecordsKey = "audit.maxRecords"
+        static let defaultRetentionDays = 365
+        static let defaultMaxRecords = 10_000
+        static let minRetentionDays = 30
+        static let maxRetentionDays = 3650
+        static let minMaxRecords = 500
+        static let maxMaxRecords = 200_000
+    }
+
     private let fileManager = FileManager.default
     private let encoder = JSONEncoder()
+    private let decoder = JSONDecoder()
     private let logFileURL: URL
-    private let retentionDays = 365
-    private let maxRecords = 10_000
 
     private init() {
         encoder.dateEncodingStrategy = .iso8601
+        decoder.dateDecodingStrategy = .iso8601
 
         let baseDirectory: URL
         if let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
@@ -53,6 +64,30 @@ final class AuditTrailService {
 
         try? fileManager.createDirectory(at: baseDirectory, withIntermediateDirectories: true)
         logFileURL = baseDirectory.appendingPathComponent("audit.log", isDirectory: false)
+        enforceRetentionPolicy()
+    }
+
+    var retentionDays: Int {
+        let stored = UserDefaults.standard.integer(forKey: Settings.retentionDaysKey)
+        if stored == 0 {
+            return Settings.defaultRetentionDays
+        }
+        return min(max(stored, Settings.minRetentionDays), Settings.maxRetentionDays)
+    }
+
+    var maxRecords: Int {
+        let stored = UserDefaults.standard.integer(forKey: Settings.maxRecordsKey)
+        if stored == 0 {
+            return Settings.defaultMaxRecords
+        }
+        return min(max(stored, Settings.minMaxRecords), Settings.maxMaxRecords)
+    }
+
+    func updateRetentionPolicy(retentionDays: Int, maxRecords: Int) {
+        let normalizedDays = min(max(retentionDays, Settings.minRetentionDays), Settings.maxRetentionDays)
+        let normalizedMaxRecords = min(max(maxRecords, Settings.minMaxRecords), Settings.maxMaxRecords)
+        UserDefaults.standard.set(normalizedDays, forKey: Settings.retentionDaysKey)
+        UserDefaults.standard.set(normalizedMaxRecords, forKey: Settings.maxRecordsKey)
         enforceRetentionPolicy()
     }
 
@@ -98,6 +133,10 @@ final class AuditTrailService {
         return Array(sorted.prefix(max(1, limit)))
     }
 
+    func purgeAuditLogNow() {
+        enforceRetentionPolicy()
+    }
+
     private func append(_ line: String) {
         guard let payload = line.data(using: .utf8) else { return }
 
@@ -125,8 +164,6 @@ final class AuditTrailService {
         }
 
         let cutoff = Calendar.current.date(byAdding: .day, value: -retentionDays, to: Date()) ?? .distantPast
-        let decoder = JSONDecoder()
-        decoder.dateDecodingStrategy = .iso8601
 
         var validRecords: [AuditRecord] = []
         for line in content.split(separator: "\n") {

@@ -37,9 +37,9 @@ Visione: costruire il miglior gestionale clinico macOS open-source per professio
 - [ ] Consolidare regressioni note e warning policy.
 
 ### Sprint B (compliance operativa)
-- [ ] Policy retention + purge controllata (audit e dati operativi derivati).
-- [ ] Mappa di tracciabilità `GDPR_Roadmap.md` -> task codice.
-- [ ] Report interno “compliance readiness” per release candidate.
+- [x] Policy retention + purge controllata (audit e dati operativi derivati).
+- [x] Mappa di tracciabilità `GDPR_Roadmap.md` -> task codice.
+- [x] Report interno “compliance readiness” per release candidate.
 
 ### Sprint C (UX pro ad alta produttività)
 - [ ] Shortcut principali (nuova nota, salva terapia/esami, export referto).
@@ -92,7 +92,8 @@ Gate:
   - [x] Nessun troncamento note.
   - [x] Narrativa robusta su campi incompleti.
 - [ ] Hardening finale P1
-  - [ ] Test end-to-end “visita completa” (anagrafica -> note -> terapia -> esami -> referto).
+  - [x] Test end-to-end core (anagrafica -> note -> terapia -> esami).
+  - [x] Estendere test end-to-end con export/anteprima referto.
 
 ---
 
@@ -112,12 +113,13 @@ Gate:
   - [x] Viewer interno con filtri.
 - [x] Compliance workflow (parziale)
   - [x] Export diritto di accesso/portabilità strutturato.
-  - [ ] Collegare milestone P0/P1/P2 GDPR a task codice.
-  - [ ] Policy retention e purge controllata.
+  - [x] Collegare milestone P0/P1/P2 GDPR a task codice.
+  - [x] Policy retention e purge controllata.
   - [x] Baseline retention audit log implementata (finestra temporale + cap record).
 - [ ] Hardening crittografia e backup
-  - [ ] Verifica periodica restore automatizzata (test fixture).
-  - [ ] Versioning formato backup + migrazioni documentate.
+  - [x] Verifica periodica restore automatizzata (test fixture).
+  - [x] Versioning formato backup + migrazioni documentate.
+  - [x] Validazione coerenza metadata backup (`schemaVersion`, `recordCounts`) in restore.
 
 ---
 
@@ -132,7 +134,7 @@ Gate:
 
 ### Sottopunti
 - [ ] UX di velocità
-  - [ ] Shortcut azioni principali.
+  - [x] Shortcut azioni principali (referto + salvataggi clinici core).
   - [ ] Command palette clinica.
 - [ ] Multi-window impeccabile
   - [ ] Stato menu sempre coerente.
@@ -168,6 +170,28 @@ Gate:
 - [ ] Documentazione tecnica viva
   - [ ] ADR architetturali aggiornati.
   - [ ] Changelog orientato a clinici e contributori OSS.
+
+---
+
+## Matrice Tracciabilità GDPR -> Codice
+Questa sezione collega `GDPR_Roadmap.md` ai task implementativi concreti in Chirone.
+Riferimento operativo: `COMPLIANCE_READINESS.md`.
+
+| GDPR milestone | Stato | Implementazione corrente | Gap residuo | Prossima azione |
+|---|---|---|---|---|
+| P0 Audit log di sicurezza | `PARZIALE` | AuditTrailService + eventi critici + viewer interno | Manca policy formale retention completa e incident drill | Chiudere task retention/purge completo in P2 |
+| P0 Informativa privacy e consenso | `NON AVVIATO` | Nessun modulo dedicato in profilo paziente | Mancano UI/record consenso/informativa | Progettare `ConsentSection` in anagrafica paziente |
+| P0 Incident response / data breach | `PARZIALE` | Runbook operativo e template notifica in `INCIDENT_RESPONSE.md` | Manca simulazione periodica tabletop con evidenze | Pianificare drill trimestrale e checklist esito |
+| P1 Gestione diritti interessato - Accesso/Esportazione | `PARZIALE` | Export strutturato JSON paziente attivo implementato | Mancano workflow rettifica/cancellazione tracciata | Definire action set diritti in UI + audit eventi |
+| P1 Policy retention e cancellazione | `PARZIALE` | Baseline retention audit log implementata | Manca policy clinica dati e purge governata | Introdurre policy configurabile + dry-run/report |
+| P1 Test periodici restore backup | `PARZIALE` | Suite test backup/restore con fixture campione e validazione schema envelope | Manca scheduling periodico in CI e fixture estese multi-versione | Estendere pipeline CI con job periodico restore drill |
+| P1 Hardening accessi | `PARZIALE` | Lock app + timeout reauth | Manca modello multi-operatore e privilegi | Pianificare modello ruoli post-v1 |
+| P2 Security supply-chain | `NON AVVIATO` | CI minima presente | Mancano SCA/secret scan/aggiornamenti dipendenze | Estendere CI con scanning dedicato |
+
+Legenda stato:
+- `NON AVVIATO`: nessun artefatto implementativo.
+- `PARZIALE`: implementazione presente ma non chiusa a livello compliance.
+- `CHIUSO`: requisito soddisfatto con evidenze tecniche/documentali.
 
 ---
 

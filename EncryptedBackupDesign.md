@@ -25,18 +25,18 @@ PBKDF2 with high iteration count is the practical native choice.
   "createdAt": "2026-04-28T12:00:00Z",
   "cipher": {
     "algorithm": "AES-GCM-256",
-    "nonce": "base64...",
-    "aad": "base64..."
+    "nonceBase64": "base64...",
+    "aadBase64": "base64..."
   },
   "kdf": {
     "algorithm": "PBKDF2-HMAC-SHA256",
-    "salt": "base64...",
+    "saltBase64": "base64...",
     "iterations": 600000,
     "keyLength": 32
   },
-  "wrappedDEK": "base64...",
-  "wrappedDEKNonce": "base64...",
-  "payload": "base64...",
+  "wrappedDEKBase64": "base64...",
+  "wrappedDEKNonceBase64": "base64...",
+  "payloadBase64": "base64...",
   "metadata": {
     "appVersion": "1.0.0",
     "schemaVersion": 1,
@@ -77,7 +77,7 @@ Encrypted payload is a compressed JSON object containing:
 8. Zeroize plaintext password buffers where possible.
 
 ## Restore flow
-1. Parse envelope, validate `format` and `version`.
+1. Parse envelope, validate `format`, `version` and `metadata.schemaVersion`.
 2. Derive `KEK` from provided password using envelope KDF params.
 3. Unwrap `DEK`.
 4. Decrypt payload and verify GCM tag.
@@ -95,3 +95,25 @@ Encrypted payload is a compressed JSON object containing:
 - Increment `version` for breaking changes.
 - Add optional fields only (backward compatible).
 - Maintain migration table from `version N` to latest.
+
+## Version and migration policy
+
+### Envelope `version`
+- Represents cryptographic envelope compatibility (`cipher`, `kdf`, wrapping rules).
+- If unsupported, restore must fail fast (`unsupportedVersion`).
+
+### `metadata.schemaVersion`
+- Represents payload schema compatibility (entity structure/fields).
+- If unsupported, restore must fail fast (`unsupportedSchemaVersion`).
+
+### Migration matrix
+| Envelope version | Schema version | Restore support |
+|---|---|---|
+| 1 | 1 | Supported |
+
+### Rules for next versions
+1. Any cryptographic incompatibility increments envelope `version`.
+2. Any payload model incompatibility increments `metadata.schemaVersion`.
+3. New restore support must include tests:
+   - valid restore from previous supported versions
+   - explicit rejection of unsupported versions

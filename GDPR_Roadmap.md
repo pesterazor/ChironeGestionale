@@ -34,9 +34,9 @@ Ultimo aggiornamento: 2026-04-28
   - Timestamp affidabili
 
 - [ ] Incident response / data breach
-  - Procedura interna
-  - Flusso decisionale notifica entro 72h (art. 33)
-  - Template di comunicazione
+  - [x] Procedura interna
+  - [x] Flusso decisionale notifica entro 72h (art. 33)
+  - [x] Template di comunicazione
 
 ## P1 (Alta priorità subito dopo)
 

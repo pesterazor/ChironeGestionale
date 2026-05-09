@@ -4,10 +4,11 @@ import CryptoKit
 import Security
 import CommonCrypto
 
-enum EncryptedBackupError: Error {
+enum EncryptedBackupError: Error, Equatable {
     case invalidPassword
     case invalidEnvelope
     case unsupportedVersion
+    case unsupportedSchemaVersion
     case randomGenerationFailed
     case kdfFailed(status: Int32)
     case encryptionFailed
@@ -217,6 +218,9 @@ final class EncryptedBackupService {
         guard envelope.version == version else {
             throw EncryptedBackupError.unsupportedVersion
         }
+        guard envelope.metadata.schemaVersion == schemaVersion else {
+            throw EncryptedBackupError.unsupportedSchemaVersion
+        }
 
         guard
             let salt = Data(base64Encoded: envelope.kdf.saltBase64),
@@ -253,6 +257,11 @@ final class EncryptedBackupService {
         }
 
         let payload = try JSONDecoder.chirone.decode(BackupPayload.self, from: decryptedPayload)
+        guard envelope.metadata.recordCounts.patients == payload.patients.count,
+              envelope.metadata.recordCounts.clinicalNotes == payload.clinicalNotes.count,
+              envelope.metadata.recordCounts.therapyItems == payload.therapyItems.count else {
+            throw EncryptedBackupError.invalidEnvelope
+        }
 
         if replaceExisting {
             try clearAllData(in: modelContext)

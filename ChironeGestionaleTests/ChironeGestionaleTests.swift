@@ -124,4 +124,135 @@ final class ChironeGestionaleTests: XCTestCase {
         XCTAssertEqual(ordered.first?.id, newest.id)
         XCTAssertEqual(ordered.last?.id, oldest.id)
     }
+
+    func testEncryptedBackupEnvelopeMetadataAndCountsAreConsistent() throws {
+        let schema = Schema([Patient.self, ClinicalNote.self, TherapyMedication.self])
+        let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
+        let container = try ModelContainer(for: schema, configurations: [config])
+        let context = ModelContext(container)
+
+        let patientA = Patient(firstName: "Anna", lastName: "Bianchi")
+        let patientB = Patient(firstName: "Luca", lastName: "Verdi")
+        context.insert(patientA)
+        context.insert(patientB)
+
+        let noteA = ClinicalNote(content: "Nota A", wellbeingScore: 8, patient: patientA)
+        let noteB = ClinicalNote(content: "Nota B", wellbeingScore: 6, patient: patientB)
+        context.insert(noteA)
+        context.insert(noteB)
+        patientA.clinicalNotes.append(noteA)
+        patientB.clinicalNotes.append(noteB)
+
+        let medA = TherapyMedication(medicationName: "Farmaco A", dosage: "5mg", posology: "1/die", patient: patientA)
+        let medB = TherapyMedication(medicationName: "Farmaco B", dosage: "10mg", posology: "2/die", patient: patientB)
+        context.insert(medA)
+        context.insert(medB)
+        patientA.therapyItems.append(medA)
+        patientB.therapyItems.append(medB)
+        try context.save()
+
+        let backupData = try EncryptedBackupService.shared.exportBackup(from: context, password: "PasswordMoltoSicura!")
+        let envelope = try JSONDecoder.chirone.decode(EncryptedBackupEnvelope.self, from: backupData)
+
+        XCTAssertEqual(envelope.format, "chirone-backup")
+        XCTAssertEqual(envelope.version, 1)
+        XCTAssertEqual(envelope.metadata.schemaVersion, 1)
+        XCTAssertEqual(envelope.metadata.recordCounts.patients, 2)
+        XCTAssertEqual(envelope.metadata.recordCounts.clinicalNotes, 2)
+        XCTAssertEqual(envelope.metadata.recordCounts.therapyItems, 2)
+    }
+
+    func testEncryptedBackupRestoreRejectsUnsupportedSchemaVersion() throws {
+        let schema = Schema([Patient.self, ClinicalNote.self, TherapyMedication.self])
+        let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
+        let container = try ModelContainer(for: schema, configurations: [config])
+        let context = ModelContext(container)
+
+        context.insert(Patient(firstName: "Mario", lastName: "Rossi"))
+        try context.save()
+
+        let backupData = try EncryptedBackupService.shared.exportBackup(from: context, password: "PasswordMoltoSicura!")
+        var envelope = try JSONDecoder.chirone.decode(EncryptedBackupEnvelope.self, from: backupData)
+        envelope = EncryptedBackupEnvelope(
+            format: envelope.format,
+            version: envelope.version,
+            createdAt: envelope.createdAt,
+            cipher: envelope.cipher,
+            kdf: envelope.kdf,
+            wrappedDEKBase64: envelope.wrappedDEKBase64,
+            wrappedDEKNonceBase64: envelope.wrappedDEKNonceBase64,
+            payloadBase64: envelope.payloadBase64,
+            metadata: .init(
+                appVersion: envelope.metadata.appVersion,
+                schemaVersion: envelope.metadata.schemaVersion + 1,
+                recordCounts: envelope.metadata.recordCounts
+            )
+        )
+        let tamperedData = try JSONEncoder.chirone.encode(envelope)
+
+        let restoreContainer = try ModelContainer(for: schema, configurations: [config])
+        let restoreContext = ModelContext(restoreContainer)
+
+        XCTAssertThrowsError(
+            try EncryptedBackupService.shared.restoreBackup(
+                into: restoreContext,
+                password: "PasswordMoltoSicura!",
+                backupData: tamperedData
+            )
+        ) { error in
+            guard let backupError = error as? EncryptedBackupError else {
+                return XCTFail("Expected EncryptedBackupError, got \(error)")
+            }
+            XCTAssertEqual(backupError, .unsupportedSchemaVersion)
+        }
+    }
+
+    func testEncryptedBackupRestoreRejectsMismatchedRecordCounts() throws {
+        let schema = Schema([Patient.self, ClinicalNote.self, TherapyMedication.self])
+        let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
+        let container = try ModelContainer(for: schema, configurations: [config])
+        let context = ModelContext(container)
+
+        context.insert(Patient(firstName: "Mario", lastName: "Rossi"))
+        try context.save()
+
+        let backupData = try EncryptedBackupService.shared.exportBackup(from: context, password: "PasswordMoltoSicura!")
+        var envelope = try JSONDecoder.chirone.decode(EncryptedBackupEnvelope.self, from: backupData)
+        envelope = EncryptedBackupEnvelope(
+            format: envelope.format,
+            version: envelope.version,
+            createdAt: envelope.createdAt,
+            cipher: envelope.cipher,
+            kdf: envelope.kdf,
+            wrappedDEKBase64: envelope.wrappedDEKBase64,
+            wrappedDEKNonceBase64: envelope.wrappedDEKNonceBase64,
+            payloadBase64: envelope.payloadBase64,
+            metadata: .init(
+                appVersion: envelope.metadata.appVersion,
+                schemaVersion: envelope.metadata.schemaVersion,
+                recordCounts: .init(
+                    patients: envelope.metadata.recordCounts.patients + 1,
+                    clinicalNotes: envelope.metadata.recordCounts.clinicalNotes,
+                    therapyItems: envelope.metadata.recordCounts.therapyItems
+                )
+            )
+        )
+        let tamperedData = try JSONEncoder.chirone.encode(envelope)
+
+        let restoreContainer = try ModelContainer(for: schema, configurations: [config])
+        let restoreContext = ModelContext(restoreContainer)
+
+        XCTAssertThrowsError(
+            try EncryptedBackupService.shared.restoreBackup(
+                into: restoreContext,
+                password: "PasswordMoltoSicura!",
+                backupData: tamperedData
+            )
+        ) { error in
+            guard let backupError = error as? EncryptedBackupError else {
+                return XCTFail("Expected EncryptedBackupError, got \(error)")
+            }
+            XCTAssertEqual(backupError, .invalidEnvelope)
+        }
+    }
 }

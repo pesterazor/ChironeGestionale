@@ -268,6 +268,7 @@ private struct NewClinicalNoteComposerView: View {
                     .scrollContentBackground(.hidden)
                     .padding(.horizontal, 4)
                     .padding(.vertical, 6)
+                    .accessibilityIdentifier("clinical_new_note_text")
             }
             .frame(minHeight: 100)
             .overlay(
@@ -309,6 +310,8 @@ private struct NewClinicalNoteComposerView: View {
                 }
             }
             .buttonStyle(.borderedProminent)
+            .accessibilityIdentifier("clinical_save_note_button")
+            .keyboardShortcut("s", modifiers: [.command, .shift])
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
             .disabled(content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)

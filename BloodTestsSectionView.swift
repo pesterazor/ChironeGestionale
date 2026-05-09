@@ -116,6 +116,7 @@ private extension BloodTestsSectionView {
                 saveDraft()
             }
             .buttonStyle(.borderedProminent)
+            .keyboardShortcut("e", modifiers: [.command, .option])
             .disabled(!hasUnsavedChanges)
             .accessibilityIdentifier("bloodtests_save_button")
         }
