@@ -3,6 +3,14 @@ import SwiftData
 import AppKit
 
 struct ContentView: View {
+    private struct CommandPaletteAction: Identifiable {
+        let id = UUID()
+        let title: String
+        let subtitle: String
+        let keywords: [String]
+        let handler: () -> Void
+    }
+
     private enum SidebarSortOption: String, CaseIterable, Identifiable {
         case name
         case lastVisit
@@ -20,11 +28,13 @@ struct ContentView: View {
     }
 
     @Environment(\.modelContext) private var modelContext
+    @EnvironmentObject private var commandPaletteState: CommandPaletteState
     @Query(sort: [SortDescriptor(\Patient.lastName), SortDescriptor(\Patient.firstName)]) private var patients: [Patient]
 
     @State private var searchText = ""
     @State private var selectedPatientID: UUID?
     @State private var showAddPatientSheet = false
+    @State private var didAttemptWindowRestore = false
 
     @State private var newPatientFirstName = ""
     @State private var newPatientLastName = ""
@@ -36,8 +46,92 @@ struct ContentView: View {
     @State private var showNewPatientBirthPlaceSuggestions = false
 
     @State private var sidebarSortOption: SidebarSortOption = .name
+    @State private var commandPaletteQuery = ""
+    @State private var commandPaletteOpenedAt: Date?
 
     @FocusState private var isNewPatientBirthPlaceFocused: Bool
+
+    private var commandPaletteActions: [CommandPaletteAction] {
+        [
+            CommandPaletteAction(
+                title: "Nuovo paziente",
+                subtitle: "Apre la scheda di creazione paziente",
+                keywords: ["nuovo", "paziente", "anagrafica", "create"]
+            ) {
+                showAddPatientSheet = true
+            },
+            CommandPaletteAction(
+                title: "Apri cartella clinica selezionata",
+                subtitle: "Apre la finestra clinica del paziente corrente",
+                keywords: ["apri", "cartella", "clinica", "finestra", "patient"]
+            ) {
+                openSelectedPatientWindow()
+            },
+            CommandPaletteAction(
+                title: "Ordina pazienti per nome",
+                subtitle: "Imposta ordinamento alfabetico",
+                keywords: ["ordina", "nome", "alfabetico", "sidebar"]
+            ) {
+                sidebarSortOption = .name
+            },
+            CommandPaletteAction(
+                title: "Ordina pazienti per ultima visita",
+                subtitle: "Prioritizza pazienti con attività recente",
+                keywords: ["ordina", "ultima", "visita", "recenti", "sidebar"]
+            ) {
+                sidebarSortOption = .lastVisit
+            },
+            CommandPaletteAction(
+                title: "Pulisci ricerca pazienti",
+                subtitle: "Azzera il filtro testuale in sidebar",
+                keywords: ["pulisci", "ricerca", "filtro", "search"]
+            ) {
+                searchText = ""
+            },
+            CommandPaletteAction(
+                title: "Salva nota clinica (paziente attivo)",
+                subtitle: "Esegue salvataggio nota nella cartella clinica attiva",
+                keywords: ["salva", "nota", "clinica", "active", "patient"]
+            ) {
+                dispatchCommandToActivePatientWindow(.commandPaletteSaveClinicalNoteRequested)
+            },
+            CommandPaletteAction(
+                title: "Aggiungi farmaco (paziente attivo)",
+                subtitle: "Aggiunge una riga terapia nella cartella clinica attiva",
+                keywords: ["aggiungi", "farmaco", "terapia", "active", "patient"]
+            ) {
+                dispatchCommandToActivePatientWindow(.commandPaletteAddTherapyMedicationRequested)
+            },
+            CommandPaletteAction(
+                title: "Salva terapia (paziente attivo)",
+                subtitle: "Salva terapia farmacologica della cartella attiva",
+                keywords: ["salva", "terapia", "farmaco", "active", "patient"]
+            ) {
+                dispatchCommandToActivePatientWindow(.commandPaletteSaveTherapyRequested)
+            },
+            CommandPaletteAction(
+                title: "Salva esami (paziente attivo)",
+                subtitle: "Salva tabella esami nella cartella clinica attiva",
+                keywords: ["salva", "esami", "ematochimici", "active", "patient"]
+            ) {
+                dispatchCommandToActivePatientWindow(.commandPaletteSaveBloodTestsRequested)
+            }
+        ]
+    }
+
+    private var filteredCommandPaletteActions: [CommandPaletteAction] {
+        let query = commandPaletteQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !query.isEmpty else {
+            return commandPaletteActions
+        }
+
+        return commandPaletteActions.filter { action in
+            if action.title.lowercased().contains(query) || action.subtitle.lowercased().contains(query) {
+                return true
+            }
+            return action.keywords.contains(where: { $0.lowercased().contains(query) })
+        }
+    }
 
     private var filteredPatients: [Patient] {
         let trimmedQuery = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -134,7 +228,18 @@ struct ContentView: View {
         .sheet(isPresented: $showAddPatientSheet) {
             addPatientSheet
         }
+        .sheet(isPresented: $commandPaletteState.isPresented, onDismiss: {
+            commandPaletteQuery = ""
+            commandPaletteOpenedAt = nil
+        }) {
+            commandPaletteSheet
+        }
         .onAppear {
+            if !didAttemptWindowRestore {
+                didAttemptWindowRestore = true
+                PatientWindowCoordinator.shared.restoreOpenWindows(modelContainer: modelContext.container)
+            }
+
             if selectedPatientID == nil {
                 selectedPatientID = patients.first?.id
             }
@@ -149,6 +254,73 @@ struct ContentView: View {
                 selectedPatientID = patients.first?.id
             }
         }
+        .onChange(of: commandPaletteState.isPresented) { _, isPresented in
+            if isPresented {
+                commandPaletteOpenedAt = Date()
+            } else {
+                commandPaletteOpenedAt = nil
+            }
+        }
+    }
+
+    private var commandPaletteSheet: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Command Palette")
+                .font(.title3.weight(.semibold))
+
+            TextField("Cerca azione (es. nuovo paziente, apri cartella, ordina...)", text: $commandPaletteQuery)
+                .textFieldStyle(.roundedBorder)
+
+            if filteredCommandPaletteActions.isEmpty {
+                ContentUnavailableView(
+                    "Nessuna azione trovata",
+                    systemImage: "magnifyingglass",
+                    description: Text("Prova con un termine diverso.")
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                List(filteredCommandPaletteActions) { action in
+                    Button {
+                        action.handler()
+                        logCommandPaletteExecution(actionTitle: action.title)
+                        commandPaletteState.dismiss()
+                    } label: {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(action.title)
+                                .font(.body.weight(.semibold))
+                            Text(action.subtitle)
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.vertical, 2)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(action.title == "Apri cartella clinica selezionata" && selectedPatient == nil)
+                }
+                .listStyle(.inset)
+            }
+
+            HStack {
+                Text("Shortcut")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Text("⌘K")
+                    .font(.caption.monospaced())
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(
+                        Capsule()
+                            .fill(Color.secondary.opacity(0.15))
+                    )
+                Spacer()
+                Button("Chiudi") {
+                    commandPaletteState.dismiss()
+                }
+            }
+        }
+        .padding(16)
+        .frame(minWidth: 560, minHeight: 420)
     }
 
     private var sidebarContent: some View {
@@ -441,6 +613,54 @@ struct ContentView: View {
             }
             modelContext.delete(patient)
         }
+    }
+
+    private func dispatchCommandToActivePatientWindow(_ name: Notification.Name) {
+        guard let activePatient = PatientWindowCoordinator.shared.activePatient() else {
+            NSSound.beep()
+            return
+        }
+
+        NotificationCenter.default.post(
+            name: name,
+            object: self,
+            userInfo: ["patientID": activePatient.id.uuidString]
+        )
+    }
+
+    private func logCommandPaletteExecution(actionTitle: String) {
+        let normalizedAction = actionTitle
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+            .replacingOccurrences(of: " ", with: "_")
+
+        let latencyMs: Int? = {
+            guard let openedAt = commandPaletteOpenedAt else { return nil }
+            let elapsed = Date().timeIntervalSince(openedAt)
+            if elapsed < 0 { return nil }
+            return Int((elapsed * 1000).rounded())
+        }()
+
+        let latencyBucket: String = {
+            guard let latencyMs else { return "unknown" }
+            switch latencyMs {
+            case 0..<750: return "<750ms"
+            case 750..<1500: return "750-1500ms"
+            case 1500..<3000: return "1.5-3s"
+            case 3000..<6000: return "3-6s"
+            default: return ">6s"
+            }
+        }()
+
+        var metadata: [String: String] = [
+            "action": normalizedAction,
+            "latency_bucket": latencyBucket
+        ]
+        if let latencyMs {
+            metadata["latency_ms"] = String(latencyMs)
+        }
+
+        AuditTrailService.shared.log(.commandPaletteActionExecuted, metadata: metadata)
     }
 }
 

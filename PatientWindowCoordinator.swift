@@ -5,10 +5,18 @@ import ObjectiveC
 
 extension Notification.Name {
     static let patientWindowCoordinatorActivePatientDidChange = Notification.Name("patientWindowCoordinatorActivePatientDidChange")
+    static let commandPaletteAddTherapyMedicationRequested = Notification.Name("commandPaletteAddTherapyMedicationRequested")
+    static let commandPaletteSaveTherapyRequested = Notification.Name("commandPaletteSaveTherapyRequested")
+    static let commandPaletteSaveBloodTestsRequested = Notification.Name("commandPaletteSaveBloodTestsRequested")
+    static let commandPaletteSaveClinicalNoteRequested = Notification.Name("commandPaletteSaveClinicalNoteRequested")
 }
 
 final class PatientWindowCoordinator {
     static let shared = PatientWindowCoordinator()
+
+    private enum Settings {
+        static let openPatientIDsKey = "patientWindowCoordinator.openPatientIDs"
+    }
 
     private var windows: [UUID: NSWindow] = [:]
     private var patients: [UUID: Patient] = [:]
@@ -55,6 +63,7 @@ final class PatientWindowCoordinator {
             onClose: { [weak self] patientID in
                 self?.windows.removeValue(forKey: patientID)
                 self?.patients.removeValue(forKey: patientID)
+                self?.persistOpenPatientIDs()
                 if self?.activePatientID == patientID {
                     self?.setActivePatientID(nil)
                 }
@@ -66,6 +75,7 @@ final class PatientWindowCoordinator {
 
         windows[patient.id] = window
         patients[patient.id] = patient
+        persistOpenPatientIDs()
         setActivePatientID(patient.id)
         AuditTrailService.shared.log(
             .patientWindowOpened,
@@ -87,6 +97,39 @@ final class PatientWindowCoordinator {
         guard let keyWindow = NSApp.keyWindow else { return nil }
         guard let match = windows.first(where: { $0.value === keyWindow }) else { return nil }
         return patients[match.key]
+    }
+
+    func restoreOpenWindows(modelContainer: ModelContainer) {
+        let storedIDs = persistedOpenPatientIDs()
+        guard !storedIDs.isEmpty else { return }
+
+        let context = ModelContext(modelContainer)
+        let fetchedPatients = (try? context.fetch(FetchDescriptor<Patient>())) ?? []
+        let patientByID = Dictionary(uniqueKeysWithValues: fetchedPatients.map { ($0.id, $0) })
+
+        var restoredCount = 0
+        for patientID in storedIDs {
+            guard windows[patientID] == nil, let patient = patientByID[patientID] else { continue }
+            open(patient: patient, modelContainer: modelContainer)
+            restoredCount += 1
+        }
+
+        if restoredCount > 0 {
+            AuditTrailService.shared.log(
+                .patientWindowsRestored,
+                metadata: ["count": "\(restoredCount)"]
+            )
+        }
+    }
+
+    private func persistOpenPatientIDs() {
+        let ids = windows.keys.map(\.uuidString).sorted()
+        UserDefaults.standard.set(ids, forKey: Settings.openPatientIDsKey)
+    }
+
+    private func persistedOpenPatientIDs() -> [UUID] {
+        let rawIDs = UserDefaults.standard.stringArray(forKey: Settings.openPatientIDsKey) ?? []
+        return rawIDs.compactMap(UUID.init(uuidString:))
     }
 }
 

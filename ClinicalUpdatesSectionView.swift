@@ -449,18 +449,20 @@ struct ClinicalUpdatesSectionView: View {
             let maxOffset = max(0, ((totalNotesCount - 1) / notesPageSize) * notesPageSize)
             notesPageOffset = min(notesPageOffset, maxOffset)
 
-            let notesDescriptor = FetchDescriptor<ClinicalNote>(
+            var notesDescriptor = FetchDescriptor<ClinicalNote>(
                 predicate: #Predicate { note in
                     note.patient?.id == patientID
                 },
                 sortBy: [
                     SortDescriptor(\ClinicalNote.createdAt, order: .reverse),
-                    SortDescriptor(\ClinicalNote.updatedAt, order: .reverse)
+                    SortDescriptor(\ClinicalNote.updatedAt, order: .reverse),
+                    SortDescriptor(\ClinicalNote.id, order: .reverse)
                 ]
             )
-            let fetchedNotes = try modelContext.fetch(notesDescriptor)
-            let orderedNotes = ClinicalNote.timelineSorted(fetchedNotes)
-            timelineNotes = Array(orderedNotes.dropFirst(notesPageOffset).prefix(notesPageSize))
+            notesDescriptor.fetchOffset = notesPageOffset
+            notesDescriptor.fetchLimit = notesPageSize
+
+            timelineNotes = try modelContext.fetch(notesDescriptor)
         } catch {
             totalNotesCount = 0
             notesPageOffset = 0
@@ -473,6 +475,7 @@ struct ClinicalUpdatesSectionView: View {
     }
 
     private func saveNewNote() {
+        guard !newNoteContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         let timestamp = newNoteDate
         let note = ClinicalNote(
             content: "",
@@ -491,6 +494,17 @@ struct ClinicalUpdatesSectionView: View {
         notesPageOffset = 0
         refreshTimelineNotes()
         onDraftStateChange(hasUnsavedDrafts)
+    }
+
+    private func isNotificationForThisPatient(_ notification: Notification) -> Bool {
+        guard
+            let userInfo = notification.userInfo,
+            let patientIDRaw = userInfo["patientID"] as? String,
+            let patientID = UUID(uuidString: patientIDRaw)
+        else {
+            return false
+        }
+        return patientID == patient.id
     }
 
     private func deleteNote(_ note: ClinicalNote) {
@@ -571,6 +585,10 @@ struct ClinicalUpdatesSectionView: View {
         }
         .onDisappear {
             onDraftStateChange(false)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .commandPaletteSaveClinicalNoteRequested)) { notification in
+            guard isNotificationForThisPatient(notification) else { return }
+            saveNewNote()
         }
     }
 }

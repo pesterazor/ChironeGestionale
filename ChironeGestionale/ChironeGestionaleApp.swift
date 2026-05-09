@@ -13,6 +13,7 @@ import Combine
 @MainActor
 private final class PrintCommandState: ObservableObject {
     @Published private(set) var canPrintReport = false
+    @Published private(set) var activePatientName: String?
     private var cancellables: Set<AnyCancellable> = []
 
     init() {
@@ -36,14 +37,38 @@ private final class PrintCommandState: ObservableObject {
     }
 
     func refresh() {
-        let newValue = PatientWindowCoordinator.shared.activePatient() != nil
+        let activePatient = PatientWindowCoordinator.shared.activePatient()
+        let newValue = activePatient != nil
         if canPrintReport != newValue {
             canPrintReport = newValue
+        }
+        let resolvedName = activePatient?.fullName
+        if activePatientName != resolvedName {
+            activePatientName = resolvedName
         }
     }
 }
 
+@MainActor
+final class CommandPaletteState: ObservableObject {
+    @Published var isPresented = false
+
+    func present() {
+        isPresented = true
+    }
+
+    func dismiss() {
+        isPresented = false
+    }
+}
+
 private struct PreferencesView: View {
+    private struct CommandPaletteStats {
+        let totalExecutions: Int
+        let medianLatencyMs: Int?
+        let topActions: [(action: String, count: Int)]
+    }
+
     @AppStorage("security.reauthTimeoutMinutes") private var reauthTimeoutMinutes = 5
     @AppStorage("report.doctorFullName") private var doctorFullName = ""
     @AppStorage("report.doctorQualification") private var doctorQualification = ""
@@ -56,81 +81,166 @@ private struct PreferencesView: View {
     @State private var auditRecords: [AuditRecord] = []
     @State private var auditRetentionDays = AuditTrailService.shared.retentionDays
     @State private var auditMaxRecords = AuditTrailService.shared.maxRecords
+    @State private var commandPaletteRecords: [AuditRecord] = []
+
+    private var commandPaletteStats: CommandPaletteStats {
+        let latencies: [Int] = commandPaletteRecords.compactMap { record in
+            guard let raw = record.metadata["latency_ms"] else { return nil }
+            return Int(raw)
+        }
+        .filter { $0 >= 0 }
+        .sorted()
+
+        let medianLatencyMs: Int? = {
+            guard !latencies.isEmpty else { return nil }
+            let mid = latencies.count / 2
+            if latencies.count.isMultiple(of: 2) {
+                return (latencies[mid - 1] + latencies[mid]) / 2
+            }
+            return latencies[mid]
+        }()
+
+        let grouped = Dictionary(grouping: commandPaletteRecords) { record -> String in
+            record.metadata["action"] ?? "unknown"
+        }
+        let topActions = grouped
+            .map { key, value in (action: key, count: value.count) }
+            .sorted { lhs, rhs in
+                if lhs.count != rhs.count { return lhs.count > rhs.count }
+                return lhs.action < rhs.action
+            }
+            .prefix(3)
+            .map { $0 }
+
+        return CommandPaletteStats(
+            totalExecutions: commandPaletteRecords.count,
+            medianLatencyMs: medianLatencyMs,
+            topActions: topActions
+        )
+    }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            Text("Preferenze")
-                .font(.title2.weight(.semibold))
+        ScrollView(.vertical) {
+            VStack(alignment: .leading, spacing: 18) {
+                Text("Preferenze")
+                    .font(.title2.weight(.semibold))
 
-            GroupBox("Intestazione referti") {
-                VStack(alignment: .leading, spacing: 10) {
-                    TextField("Nome e cognome medico", text: $doctorFullName, prompt: Text("Dr.ssa/Dr. Nome Cognome"))
-                    TextField("Qualifica", text: $doctorQualification, prompt: Text("Medico Chirurgo - Specialista in Psichiatria"))
-                    TextField("Indirizzo studio", text: $doctorAddress, prompt: Text("Via..., CAP Città (Prov.)"))
-                    TextField("Contatti", text: $doctorPhoneEmail, prompt: Text("Telefono - Email/PEC"))
+                GroupBox("Intestazione referti") {
+                    VStack(alignment: .leading, spacing: 10) {
+                        TextField("Nome e cognome medico", text: $doctorFullName, prompt: Text("Dr.ssa/Dr. Nome Cognome"))
+                        TextField("Qualifica", text: $doctorQualification, prompt: Text("Medico Chirurgo - Specialista in Psichiatria"))
+                        TextField("Indirizzo studio", text: $doctorAddress, prompt: Text("Via..., CAP Città (Prov.)"))
+                        TextField("Contatti", text: $doctorPhoneEmail, prompt: Text("Telefono - Email/PEC"))
 
-                    HStack {
-                        Text("Numero note nel referto")
-                        Spacer()
-                        Stepper(value: $reportNotesInReport, in: 2...5) {
-                            Text("\(reportNotesInReport)")
-                                .monospacedDigit()
-                                .frame(minWidth: 36, alignment: .trailing)
-                        }
-                        .labelsHidden()
-                    }
-                }
-                .textFieldStyle(.roundedBorder)
-                .padding(10)
-            }
-
-            GroupBox("Sicurezza") {
-                VStack(alignment: .leading, spacing: 14) {
-                    HStack(alignment: .firstTextBaseline) {
-                        Text("Nuova autenticazione")
-                            .font(.headline)
-                        Spacer()
-                        Text(timeoutLabel(minutes: reauthTimeoutMinutes))
-                            .font(.headline)
-                            .foregroundStyle(.primary)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 4)
-                            .background(
-                                Capsule()
-                                    .fill(Color(nsColor: .controlBackgroundColor))
-                            )
-                    }
-
-                    HStack {
-                        Text("Timeout")
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                        Stepper(value: $reauthTimeoutMinutes, in: 1...240) {
-                            Text("\(reauthTimeoutMinutes) min")
-                                .monospacedDigit()
-                                .frame(minWidth: 80, alignment: .trailing)
-                        }
-                    }
-
-                    HStack(spacing: 8) {
-                        ForEach(quickTimeouts, id: \.self) { value in
-                            Button("\(value)m") {
-                                reauthTimeoutMinutes = value
+                        HStack {
+                            Text("Numero note nel referto")
+                            Spacer()
+                            Stepper(value: $reportNotesInReport, in: 2...5) {
+                                Text("\(reportNotesInReport)")
+                                    .monospacedDigit()
+                                    .frame(minWidth: 36, alignment: .trailing)
                             }
-                            .buttonStyle(.bordered)
-                            .tint(reauthTimeoutMinutes == value ? .accentColor : nil)
+                            .labelsHidden()
                         }
                     }
-
-                    Text("Quando l'app torna attiva dopo questo intervallo, viene richiesto di nuovo Touch ID o la password di sistema.")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                    .textFieldStyle(.roundedBorder)
+                    .padding(10)
                 }
-                .padding(10)
-            }
 
-            GroupBox("Audit trail") {
-                VStack(alignment: .leading, spacing: 10) {
+                GroupBox("Sicurezza") {
+                    VStack(alignment: .leading, spacing: 14) {
+                        HStack(alignment: .firstTextBaseline) {
+                            Text("Nuova autenticazione")
+                                .font(.headline)
+                            Spacer()
+                            Text(timeoutLabel(minutes: reauthTimeoutMinutes))
+                                .font(.headline)
+                                .foregroundStyle(.primary)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 4)
+                                .background(
+                                    Capsule()
+                                        .fill(Color(nsColor: .controlBackgroundColor))
+                                )
+                        }
+
+                        HStack {
+                            Text("Timeout")
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Stepper(value: $reauthTimeoutMinutes, in: 1...240) {
+                                Text("\(reauthTimeoutMinutes) min")
+                                    .monospacedDigit()
+                                    .frame(minWidth: 80, alignment: .trailing)
+                            }
+                        }
+
+                        HStack(spacing: 8) {
+                            ForEach(quickTimeouts, id: \.self) { value in
+                                Button("\(value)m") {
+                                    reauthTimeoutMinutes = value
+                                }
+                                .buttonStyle(.bordered)
+                                .tint(reauthTimeoutMinutes == value ? .accentColor : nil)
+                            }
+                        }
+
+                        Text("Quando l'app torna attiva dopo questo intervallo, viene richiesto di nuovo Touch ID o la password di sistema.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(10)
+                }
+
+                GroupBox("Audit trail") {
+                    VStack(alignment: .leading, spacing: 10) {
+                    GroupBox("Productivity KPI (Command Palette - ultimi 30 giorni)") {
+                        VStack(alignment: .leading, spacing: 8) {
+                            HStack {
+                                Text("Esecuzioni totali")
+                                Spacer()
+                                Text("\(commandPaletteStats.totalExecutions)")
+                                    .font(.headline)
+                                    .monospacedDigit()
+                            }
+
+                            HStack {
+                                Text("Latenza mediana open→execute")
+                                Spacer()
+                                Text(commandPaletteStats.medianLatencyMs.map { "\($0) ms" } ?? "N/D")
+                                    .font(.headline)
+                                    .monospacedDigit()
+                            }
+
+                            Divider()
+
+                            Text("Top azioni")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+
+                            if commandPaletteStats.topActions.isEmpty {
+                                Text("Nessuna azione registrata nel periodo.")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            } else {
+                                ForEach(Array(commandPaletteStats.topActions.enumerated()), id: \.offset) { index, item in
+                                    HStack(spacing: 8) {
+                                        Text("\(index + 1).")
+                                            .font(.caption.monospacedDigit())
+                                            .foregroundStyle(.secondary)
+                                        Text(formatActionName(item.action))
+                                            .font(.caption)
+                                        Spacer()
+                                        Text("\(item.count)")
+                                            .font(.caption.monospacedDigit())
+                                            .foregroundStyle(.secondary)
+                                    }
+                                }
+                            }
+                        }
+                        .padding(10)
+                    }
+
                     HStack(spacing: 10) {
                         Picker("Evento", selection: $selectedAuditEventRaw) {
                             Text("Tutti").tag("all")
@@ -143,7 +253,9 @@ private struct PreferencesView: View {
                                 AuditEvent.backupRestored,
                                 AuditEvent.appUnlocked,
                                 AuditEvent.appLockFailed,
-                                AuditEvent.appLocked
+                                AuditEvent.appLocked,
+                                AuditEvent.commandPaletteActionExecuted,
+                                AuditEvent.patientWindowsRestored
                             ], id: \.rawValue) { event in
                                 Text(event.displayName).tag(event.rawValue)
                             }
@@ -220,11 +332,13 @@ private struct PreferencesView: View {
                         }
                         .frame(minHeight: 140, maxHeight: 220)
                     }
+                    }
+                    .padding(10)
                 }
-                .padding(10)
             }
+            .padding(20)
+            .frame(maxWidth: .infinity, alignment: .topLeading)
         }
-        .padding(20)
         .frame(minWidth: 720, minHeight: 520, alignment: .topLeading)
         .onAppear {
             auditRetentionDays = AuditTrailService.shared.retentionDays
@@ -249,6 +363,12 @@ private struct PreferencesView: View {
     private func reloadAuditRecords() {
         let selectedEvent: AuditEvent? = selectedAuditEventRaw == "all" ? nil : AuditEvent(rawValue: selectedAuditEventRaw)
         auditRecords = AuditTrailService.shared.readRecords(since: auditFromDate, event: selectedEvent, limit: 500)
+        let commandPaletteSince = Calendar.current.date(byAdding: .day, value: -30, to: Date()) ?? .distantPast
+        commandPaletteRecords = AuditTrailService.shared.readRecords(
+            since: commandPaletteSince,
+            event: .commandPaletteActionExecuted,
+            limit: 10_000
+        )
     }
 
     private func auditLabel(for rawEvent: String) -> String {
@@ -263,6 +383,12 @@ private struct PreferencesView: View {
             "\(key)=\(metadata[key] ?? "")"
         }.joined(separator: " · ")
     }
+
+    private func formatActionName(_ raw: String) -> String {
+        raw
+            .replacingOccurrences(of: "_", with: " ")
+            .capitalized
+    }
 }
 
 @main
@@ -270,6 +396,7 @@ struct ChironeGestionaleApp: App {
     private let backupUIService = BackupUIService()
     @AppStorage("report.notesInReport") private var reportNotesInReport = 3
     @StateObject private var printCommandState = PrintCommandState()
+    @StateObject private var commandPaletteState = CommandPaletteState()
 
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
@@ -298,14 +425,22 @@ struct ChironeGestionaleApp: App {
             AppLockGateView {
                 ContentView()
             }
+            .environmentObject(commandPaletteState)
         }
         .modelContainer(sharedModelContainer)
         .commands {
+            CommandGroup(after: .sidebar) {
+                Button("Apri Command Palette…") {
+                    commandPaletteState.present()
+                }
+                .keyboardShortcut("k", modifiers: [.command])
+            }
+
             CommandGroup(before: .printItem) {
                 Button {
                     exportActivePatientReport()
                 } label: {
-                    Label("Esporta referto…", systemImage: "doc.richtext")
+                    Label(exportReportCommandTitle, systemImage: "doc.richtext")
                 }
                 .keyboardShortcut("p", modifiers: [.command])
                 .disabled(!printCommandState.canPrintReport)
@@ -327,6 +462,7 @@ struct ChironeGestionaleApp: App {
                 Button("Esporta dati paziente (JSON)…") {
                     exportActivePatientPortabilityData()
                 }
+                .help(exportPatientDataHelpText)
                 .keyboardShortcut("d", modifiers: [.command, .shift])
                 .disabled(!printCommandState.canPrintReport)
             }
@@ -335,6 +471,20 @@ struct ChironeGestionaleApp: App {
         Settings {
             PreferencesView()
         }
+    }
+
+    private var exportReportCommandTitle: String {
+        guard let patientName = printCommandState.activePatientName, !patientName.isEmpty else {
+            return "Esporta referto…"
+        }
+        return "Esporta referto di \(patientName)…"
+    }
+
+    private var exportPatientDataHelpText: String {
+        guard let patientName = printCommandState.activePatientName, !patientName.isEmpty else {
+            return "Apri o attiva una cartella clinica paziente per abilitare l'export."
+        }
+        return "Esporta i dati strutturati del paziente attivo: \(patientName)."
     }
 
     private func exportActivePatientReport() {

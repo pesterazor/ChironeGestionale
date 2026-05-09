@@ -255,4 +255,30 @@ final class ChironeGestionaleTests: XCTestCase {
             XCTAssertEqual(backupError, .invalidEnvelope)
         }
     }
+
+    @MainActor
+    func testAuditTrailReadRecordsReturnsRecentlyLoggedEvent() {
+        let uniqueMarker = UUID().uuidString.lowercased()
+        let since = Date().addingTimeInterval(-10)
+
+        AuditTrailService.shared.log(
+            .commandPaletteActionExecuted,
+            metadata: [
+                "action": "test_audit_iso8601_read",
+                "marker": uniqueMarker,
+                "latency_bucket": "<750ms",
+                "latency_ms": "123"
+            ]
+        )
+
+        let records = AuditTrailService.shared.readRecords(
+            since: since,
+            event: .commandPaletteActionExecuted,
+            limit: 500
+        )
+
+        let match = records.first { $0.metadata["marker"] == uniqueMarker }
+        XCTAssertNotNil(match, "Expected to find the audit event just logged.")
+        XCTAssertEqual(match?.event, AuditEvent.commandPaletteActionExecuted.rawValue)
+    }
 }

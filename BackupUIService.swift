@@ -14,6 +14,8 @@ enum AuditEvent: String {
     case appUnlocked = "app_unlocked"
     case appLockFailed = "app_lock_failed"
     case appLocked = "app_locked"
+    case commandPaletteActionExecuted = "command_palette_action_executed"
+    case patientWindowsRestored = "patient_windows_restored"
 
     var displayName: String {
         switch self {
@@ -26,6 +28,8 @@ enum AuditEvent: String {
         case .appUnlocked: return "App sbloccata"
         case .appLockFailed: return "Sblocco fallito"
         case .appLocked: return "App bloccata"
+        case .commandPaletteActionExecuted: return "Command palette eseguita"
+        case .patientWindowsRestored: return "Sessione finestre ripristinata"
         }
     }
 }
@@ -43,12 +47,16 @@ final class AuditTrailService {
         static let maxRetentionDays = 3650
         static let minMaxRecords = 500
         static let maxMaxRecords = 200_000
+        static let retentionEnforcementInterval: TimeInterval = 300
     }
 
     private let fileManager = FileManager.default
     private let encoder = JSONEncoder()
     private let decoder = JSONDecoder()
     private let logFileURL: URL
+    private var pendingRecords: [AuditRecord] = []
+    private var lifecycleObservers: [NSObjectProtocol] = []
+    private var lastRetentionEnforcementAt: Date?
 
     private init() {
         encoder.dateEncodingStrategy = .iso8601
@@ -64,6 +72,7 @@ final class AuditTrailService {
 
         try? fileManager.createDirectory(at: baseDirectory, withIntermediateDirectories: true)
         logFileURL = baseDirectory.appendingPathComponent("audit.log", isDirectory: false)
+        registerLifecycleObservers()
         enforceRetentionPolicy()
     }
 
@@ -88,20 +97,13 @@ final class AuditTrailService {
         let normalizedMaxRecords = min(max(maxRecords, Settings.minMaxRecords), Settings.maxMaxRecords)
         UserDefaults.standard.set(normalizedDays, forKey: Settings.retentionDaysKey)
         UserDefaults.standard.set(normalizedMaxRecords, forKey: Settings.maxRecordsKey)
+        flushPendingWrites()
         enforceRetentionPolicy()
     }
 
     func log(_ event: AuditEvent, metadata: [String: String] = [:]) {
         let record = AuditRecord(timestamp: Date(), event: event.rawValue, metadata: metadata)
-
-        guard let data = try? encoder.encode(record),
-              var line = String(data: data, encoding: .utf8)
-        else {
-            return
-        }
-
-        line.append("\n")
-        append(line)
+        pendingRecords.append(record)
     }
 
     func redactedIdentifier(for id: UUID) -> String {
@@ -110,16 +112,22 @@ final class AuditTrailService {
     }
 
     func readRecords(since: Date? = nil, event: AuditEvent? = nil, limit: Int = 500) -> [AuditRecord] {
+        flushPendingWrites()
+
         guard let data = try? Data(contentsOf: logFileURL),
               let content = String(data: data, encoding: .utf8)
         else {
             return []
         }
 
+        let maxResults = max(1, limit)
+        let lines = content.split(separator: "\n")
         var parsed: [AuditRecord] = []
-        for line in content.split(separator: "\n") {
+        parsed.reserveCapacity(min(maxResults, lines.count))
+
+        for line in lines.reversed() {
             guard let lineData = line.data(using: .utf8),
-                  let record = try? JSONDecoder().decode(AuditRecord.self, from: lineData)
+                  let record = try? decoder.decode(AuditRecord.self, from: lineData)
             else {
                 continue
             }
@@ -127,33 +135,88 @@ final class AuditTrailService {
             if let since, record.timestamp < since { continue }
             if let event, record.event != event.rawValue { continue }
             parsed.append(record)
+            if parsed.count >= maxResults {
+                break
+            }
         }
 
-        let sorted = parsed.sorted { $0.timestamp > $1.timestamp }
-        return Array(sorted.prefix(max(1, limit)))
+        return parsed
     }
 
     func purgeAuditLogNow() {
+        flushPendingWrites()
         enforceRetentionPolicy()
     }
 
-    private func append(_ line: String) {
-        guard let payload = line.data(using: .utf8) else { return }
+    private func flushPendingWrites() {
+        guard !pendingRecords.isEmpty else { return }
+        let snapshot = pendingRecords
+        pendingRecords.removeAll(keepingCapacity: true)
+
+        var lines: [String] = []
+        lines.reserveCapacity(snapshot.count)
+        for record in snapshot {
+            guard let data = try? encoder.encode(record),
+                  let text = String(data: data, encoding: .utf8)
+            else {
+                continue
+            }
+            lines.append(text)
+        }
+        guard !lines.isEmpty else { return }
+        let payload = (lines.joined(separator: "\n") + "\n").data(using: .utf8)
+        guard let payload else { return }
 
         if !fileManager.fileExists(atPath: logFileURL.path) {
             fileManager.createFile(atPath: logFileURL.path, contents: payload)
+            maybeEnforceRetentionPolicy()
             return
         }
-
         do {
             let handle = try FileHandle(forWritingTo: logFileURL)
             defer { try? handle.close() }
             try handle.seekToEnd()
             try handle.write(contentsOf: payload)
-            enforceRetentionPolicy()
+            maybeEnforceRetentionPolicy()
         } catch {
             // Best-effort logging: errors are intentionally ignored.
         }
+    }
+
+    private func registerLifecycleObservers() {
+        let terminateObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.willTerminateNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor [self] in
+                self.flushPendingWrites()
+            }
+        }
+        lifecycleObservers.append(terminateObserver)
+
+        let sleepObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.willSleepNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            guard let self else { return }
+            Task { @MainActor [self] in
+                self.flushPendingWrites()
+            }
+        }
+        lifecycleObservers.append(sleepObserver)
+    }
+
+    private func maybeEnforceRetentionPolicy() {
+        let now = Date()
+        if let lastRetentionEnforcementAt,
+           now.timeIntervalSince(lastRetentionEnforcementAt) < Settings.retentionEnforcementInterval {
+            return
+        }
+        lastRetentionEnforcementAt = now
+        enforceRetentionPolicy()
     }
 
     private func enforceRetentionPolicy() {

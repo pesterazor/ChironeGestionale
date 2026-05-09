@@ -135,10 +135,13 @@ Gate:
 ### Sottopunti
 - [ ] UX di velocità
   - [x] Shortcut azioni principali (referto + salvataggi clinici core).
-  - [ ] Command palette clinica.
+  - [x] Command palette MVP (`⌘K`) per azioni frequenti di navigazione/operatività.
+  - [x] Estendere command palette ai comandi clinici avanzati in finestra paziente.
+  - [x] Tracciamento metrica locale command palette (azione + latenza open→execute, no PHI).
+  - [x] Mini dashboard KPI in Preferenze (mediana latenza + top azioni ultimi 30 giorni).
 - [ ] Multi-window impeccabile
-  - [ ] Stato menu sempre coerente.
-  - [ ] Ripristino sessione finestre.
+  - [x] Stato menu sempre coerente.
+  - [x] Ripristino sessione finestre.
 - [ ] Design professionale minimal
   - [ ] Gerarchia visiva uniforme.
   - [ ] Micro-feedback coerente (save/validazioni/warning).
@@ -165,6 +168,10 @@ Gate:
   - [ ] Unit test dominio clinico/sicurezza.
   - [ ] UI test e2e flussi critici.
 - [ ] Performance su dataset reali
+  - [x] Ottimizzazione lettura audit log (reverse scan + early stop) e riduzione enforcement retention ad alta frequenza.
+  - [x] Ottimizzazione hot-path tabella esami (indice rowID→index per lookup O(1)).
+  - [x] Cache ordinamenti tabella esami (righe/colonne) con invalidazione mirata su cambi `draft`.
+  - [x] Paginazione timeline clinica ottimizzata via fetch con `offset/limit` (niente sort completo in memoria).
   - [ ] Benchmark con migliaia di note/esami.
   - [ ] Profiling memory/CPU su export PDF e timeline.
 - [ ] Documentazione tecnica viva

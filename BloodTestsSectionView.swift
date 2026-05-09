@@ -15,14 +15,28 @@ struct BloodTestsSectionView: View {
     @State private var editingColumnID: UUID?
     @State private var editingColumnDate = Date()
     @State private var isPresentingEditColumnPopover = false
+    @State private var rowIndexByID: [UUID: Int] = [:]
+    @State private var cachedSortedColumns: [BloodTestColumnRecord] = []
+    @State private var cachedSortedRows: [BloodTestRowRecord] = []
     @FocusState private var isNewExamNameFocused: Bool
 
     private var hasUnsavedChanges: Bool {
         draft != persistedDraft
     }
 
-    private var sortedColumns: [BloodTestColumnRecord] {
-        draft.columns.sorted { lhs, rhs in
+    private func isNotificationForThisPatient(_ notification: Notification) -> Bool {
+        guard
+            let userInfo = notification.userInfo,
+            let patientIDRaw = userInfo["patientID"] as? String,
+            let patientID = UUID(uuidString: patientIDRaw)
+        else {
+            return false
+        }
+        return patientID == patient.id
+    }
+
+    private func computeSortedColumns(from columns: [BloodTestColumnRecord]) -> [BloodTestColumnRecord] {
+        columns.sorted { lhs, rhs in
             let leftDate = BloodTestsSectionViewModel.parsedDate(from: lhs.dateText)
             let rightDate = BloodTestsSectionViewModel.parsedDate(from: rhs.dateText)
             switch (leftDate, rightDate) {
@@ -41,8 +55,8 @@ struct BloodTestsSectionView: View {
         }
     }
 
-    private var sortedRows: [BloodTestRowRecord] {
-        draft.rows.sorted { lhs, rhs in
+    private func computeSortedRows(from rows: [BloodTestRowRecord]) -> [BloodTestRowRecord] {
+        rows.sorted { lhs, rhs in
             let leftKey = BloodTestsDefaults.normalizedName(BloodTestsDefaults.canonicalName(lhs.testName))
             let rightKey = BloodTestsDefaults.normalizedName(BloodTestsDefaults.canonicalName(rhs.testName))
             let leftOrder = BloodTestsDefaults.defaultTestOrder[leftKey]
@@ -59,6 +73,11 @@ struct BloodTestsSectionView: View {
                 return lhs.testName.localizedCaseInsensitiveCompare(rhs.testName) == .orderedAscending
             }
         }
+    }
+
+    private func refreshSortedCaches() {
+        cachedSortedColumns = computeSortedColumns(from: draft.columns)
+        cachedSortedRows = computeSortedRows(from: draft.rows)
     }
 
     var body: some View {
@@ -80,16 +99,31 @@ struct BloodTestsSectionView: View {
             didLoad = true
             loadFromPatient()
             onDraftStateChange(hasUnsavedChanges)
+            rebuildRowIndex()
+            refreshSortedCaches()
         }
         .onChange(of: patient.id) { _, _ in
             loadFromPatient()
             onDraftStateChange(hasUnsavedChanges)
+            rebuildRowIndex()
+            refreshSortedCaches()
         }
         .onChange(of: hasUnsavedChanges) { _, value in
             onDraftStateChange(value)
         }
+        .onChange(of: draft.rows) { _, _ in
+            rebuildRowIndex()
+            refreshSortedCaches()
+        }
+        .onChange(of: draft.columns) { _, _ in
+            refreshSortedCaches()
+        }
         .onDisappear {
             onDraftStateChange(false)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .commandPaletteSaveBloodTestsRequested)) { notification in
+            guard isNotificationForThisPatient(notification) else { return }
+            saveDraft()
         }
     }
 }
@@ -158,8 +192,8 @@ private extension BloodTestsSectionView {
 
     var tableContainer: some View {
         BloodTestsAppKitTableView(
-            rows: sortedRows,
-            columns: sortedColumns,
+            rows: cachedSortedRows,
+            columns: cachedSortedColumns,
             rowNameForID: rowName(for:),
             setRowName: setRowName(_:to:),
             cellValueForIDs: cellValue(rowID:columnID:),
@@ -206,11 +240,14 @@ private extension BloodTestsSectionView {
 
 private extension BloodTestsSectionView {
     func rowName(for rowID: UUID) -> String {
-        draft.rows.first(where: { $0.id == rowID })?.testName ?? ""
+        guard let rowIndex = rowIndexByID[rowID], draft.rows.indices.contains(rowIndex) else {
+            return ""
+        }
+        return draft.rows[rowIndex].testName
     }
 
     func setRowName(_ rowID: UUID, to value: String) {
-        guard let index = draft.rows.firstIndex(where: { $0.id == rowID }) else { return }
+        guard let index = rowIndexByID[rowID], draft.rows.indices.contains(index) else { return }
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         if draft.rows[index].testName == trimmed { return }
         draft.rows[index].testName = trimmed
@@ -218,12 +255,15 @@ private extension BloodTestsSectionView {
 
     func cellValue(rowID: UUID, columnID: UUID) -> String {
         let key = columnID.uuidString
-        return draft.rows.first(where: { $0.id == rowID })?.values[key] ?? ""
+        guard let rowIndex = rowIndexByID[rowID], draft.rows.indices.contains(rowIndex) else {
+            return ""
+        }
+        return draft.rows[rowIndex].values[key] ?? ""
     }
 
     func setCellValue(rowID: UUID, columnID: UUID, value: String) {
         let key = columnID.uuidString
-        guard let rowIndex = draft.rows.firstIndex(where: { $0.id == rowID }) else { return }
+        guard let rowIndex = rowIndexByID[rowID], draft.rows.indices.contains(rowIndex) else { return }
         let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
         let previous = draft.rows[rowIndex].values[key] ?? ""
         if previous == trimmed { return }
@@ -243,7 +283,8 @@ private extension BloodTestsSectionView {
     }
 
     func canDeleteRow(with rowID: UUID) -> Bool {
-        guard let row = draft.rows.first(where: { $0.id == rowID }) else { return false }
+        guard let rowIndex = rowIndexByID[rowID], draft.rows.indices.contains(rowIndex) else { return false }
+        let row = draft.rows[rowIndex]
         return !BloodTestsSectionViewModel.isDefaultRow(row)
     }
 
@@ -285,6 +326,8 @@ private extension BloodTestsSectionView {
         draft = BloodTestsSectionViewModel.normalizePayload(decoded)
         recalculateDerivedValuesForAllColumns()
         persistedDraft = draft
+        rebuildRowIndex()
+        refreshSortedCaches()
     }
 
     func saveDraft() {
@@ -295,6 +338,7 @@ private extension BloodTestsSectionView {
         persistedDraft = normalized
         patient.bloodTestsTableJSON = BloodTestsSectionViewModel.encodePayload(normalized)
         patient.updatedAt = .now
+        refreshSortedCaches()
 
         if let noteText = BloodTestsSectionViewModel.bloodTestsRequestNoteText(from: previous, to: normalized) {
             onAutoClinicalUpdate?(noteText)
@@ -351,6 +395,8 @@ private extension BloodTestsSectionView {
 
     func removeRow(rowID: UUID) {
         draft.rows.removeAll { $0.id == rowID }
+        rebuildRowIndex()
+        refreshSortedCaches()
     }
 
     func recalculateDerivedValuesForAllColumns() {
@@ -362,6 +408,15 @@ private extension BloodTestsSectionView {
                 patientGender: patient.gender
             )
         }
+    }
+
+    func rebuildRowIndex() {
+        var index: [UUID: Int] = [:]
+        index.reserveCapacity(draft.rows.count)
+        for (rowIndex, row) in draft.rows.enumerated() {
+            index[row.id] = rowIndex
+        }
+        rowIndexByID = index
     }
 
 }

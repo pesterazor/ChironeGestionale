@@ -436,6 +436,29 @@ struct PatientClinicalWindowView: View {
         patient.clinicalNotes.append(note)
     }
 
+    private func addTherapyMedicationRow() {
+        let newItem = TherapyDraftItem(
+            id: UUID(),
+            sourceID: nil,
+            medicationName: "",
+            dosage: "",
+            posology: ""
+        )
+        therapyDraft.append(newItem)
+        pendingTherapyMedicationFocusID = newItem.id
+    }
+
+    private func isNotificationForThisPatient(_ notification: Notification) -> Bool {
+        guard
+            let userInfo = notification.userInfo,
+            let patientIDRaw = userInfo["patientID"] as? String,
+            let patientID = UUID(uuidString: patientIDRaw)
+        else {
+            return false
+        }
+        return patientID == patient.id
+    }
+
     private func saveTherapyDraft() {
         guard hasUnsavedTherapyChanges else { return }
 
@@ -634,15 +657,7 @@ struct PatientClinicalWindowView: View {
 
                         HStack(spacing: 10) {
                             Button {
-                                let newItem = TherapyDraftItem(
-                                    id: UUID(),
-                                    sourceID: nil,
-                                    medicationName: "",
-                                    dosage: "",
-                                    posology: ""
-                                )
-                                therapyDraft.append(newItem)
-                                pendingTherapyMedicationFocusID = newItem.id
+                                addTherapyMedicationRow()
                             } label: {
                                 Label("Aggiungi farmaco", systemImage: "plus")
                             }
@@ -706,6 +721,14 @@ struct PatientClinicalWindowView: View {
         }
         .onDisappear {
             PatientWindowUnsavedStateStore.shared.clear(for: patient.id)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .commandPaletteAddTherapyMedicationRequested)) { notification in
+            guard isNotificationForThisPatient(notification) else { return }
+            addTherapyMedicationRow()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .commandPaletteSaveTherapyRequested)) { notification in
+            guard isNotificationForThisPatient(notification) else { return }
+            saveTherapyDraft()
         }
     }
 }
