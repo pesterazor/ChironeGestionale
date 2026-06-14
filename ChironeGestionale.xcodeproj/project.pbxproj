@@ -7,6 +7,10 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0E0BE79C2FB9CEF300B26FC2 /* PatientTherapySectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E0BE79A2FB9CEF300B26FC2 /* PatientTherapySectionView.swift */; };
+		0E0BE79D2FB9CEF300B26FC2 /* ClinicalSharedViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E0BE7982FB9CEF300B26FC2 /* ClinicalSharedViews.swift */; };
+		0E0BE79E2FB9CEF300B26FC2 /* QuickClinicalCaptureSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E0BE79B2FB9CEF300B26FC2 /* QuickClinicalCaptureSheet.swift */; };
+		0E0BE79F2FB9CEF300B26FC2 /* PatientClinicalDataSectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E0BE7992FB9CEF300B26FC2 /* PatientClinicalDataSectionView.swift */; };
 		0E3C805F2F9B58BD0016B5A1 /* ClinicalUpdatesSectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E3C805E2F9B58BD0016B5A1 /* ClinicalUpdatesSectionView.swift */; };
 		0E4C62A62FAD2A43008358EA /* Chirone_Professional_Roadmap.md in Resources */ = {isa = PBXBuildFile; fileRef = 0E4C62A52FAD2A43008358EA /* Chirone_Professional_Roadmap.md */; };
 		0E544F842F9BF9BB0002C6B2 /* ActiveIngredientAutocomplete.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E544F832F9BF9BB0002C6B2 /* ActiveIngredientAutocomplete.swift */; };
@@ -52,6 +56,10 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		0E0BE7982FB9CEF300B26FC2 /* ClinicalSharedViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClinicalSharedViews.swift; sourceTree = "<group>"; };
+		0E0BE7992FB9CEF300B26FC2 /* PatientClinicalDataSectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PatientClinicalDataSectionView.swift; sourceTree = "<group>"; };
+		0E0BE79A2FB9CEF300B26FC2 /* PatientTherapySectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PatientTherapySectionView.swift; sourceTree = "<group>"; };
+		0E0BE79B2FB9CEF300B26FC2 /* QuickClinicalCaptureSheet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickClinicalCaptureSheet.swift; sourceTree = "<group>"; };
 		0E3C805E2F9B58BD0016B5A1 /* ClinicalUpdatesSectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClinicalUpdatesSectionView.swift; sourceTree = "<group>"; };
 		0E4C62A52FAD2A43008358EA /* Chirone_Professional_Roadmap.md */ = {isa = PBXFileReference; lastKnownFileType = net.daringfireball.markdown; path = Chirone_Professional_Roadmap.md; sourceTree = "<group>"; };
 		0E544F832F9BF9BB0002C6B2 /* ActiveIngredientAutocomplete.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActiveIngredientAutocomplete.swift; sourceTree = "<group>"; };
@@ -128,6 +136,10 @@
 		0E9D47F72F97EE26008535EE = {
 			isa = PBXGroup;
 			children = (
+				0E0BE7982FB9CEF300B26FC2 /* ClinicalSharedViews.swift */,
+				0E0BE7992FB9CEF300B26FC2 /* PatientClinicalDataSectionView.swift */,
+				0E0BE79A2FB9CEF300B26FC2 /* PatientTherapySectionView.swift */,
+				0E0BE79B2FB9CEF300B26FC2 /* QuickClinicalCaptureSheet.swift */,
 				0E9D48022F97EE26008535EE /* ChironeGestionale */,
 				0E9D48122F97EE29008535EE /* ChironeGestionaleTests */,
 				0E9D481C2F97EE29008535EE /* ChironeGestionaleUITests */,
@@ -334,6 +346,10 @@
 				0E87E59B2F9F93D700D79721 /* BloodTestsAppKitTableView.swift in Sources */,
 				0EDF2B5B2F9A81F200DB3D38 /* PatientWindowCoordinator.swift in Sources */,
 				0E87E5992F9F929000D79721 /* BloodTestsModels.swift in Sources */,
+				0E0BE79C2FB9CEF300B26FC2 /* PatientTherapySectionView.swift in Sources */,
+				0E0BE79D2FB9CEF300B26FC2 /* ClinicalSharedViews.swift in Sources */,
+				0E0BE79E2FB9CEF300B26FC2 /* QuickClinicalCaptureSheet.swift in Sources */,
+				0E0BE79F2FB9CEF300B26FC2 /* PatientClinicalDataSectionView.swift in Sources */,
 				0EB9AC612F980D6D00044B4B /* ClinicalNote.swift in Sources */,
 				0EB9AC652F98140E00044B4B /* ItalianTaxCode.swift in Sources */,
 				0ED439382F9E93EF003124BC /* PatientWindowUnsavedStateStore.swift in Sources */,

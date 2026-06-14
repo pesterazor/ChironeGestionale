@@ -45,11 +45,14 @@ struct BloodTestsAppKitTableView: NSViewRepresentable {
         private weak var leftTable: NSTableView?
         private weak var rightTable: BloodTestsNSTableView?
         private var renderedColumnIDs: [UUID] = []
+        private var renderedRowIDs: [UUID] = []
         private var isSyncingScroll = false
         private var pendingReloadAfterEditing = false
-        private var lastDataSignature = ""
+        private var lastDataHash: Int = 0
         private var lastSelectionSignature = ""
         private var suppressReloadUntil: Date?
+        private var columnStructureWasRebuilt = false
+        private var lastRowValueHashesByID: [UUID: Int] = [:]
 
         init(_ parent: BloodTestsAppKitTableView) {
             self.parent = parent
@@ -161,6 +164,7 @@ struct BloodTestsAppKitTableView: NSViewRepresentable {
                 return
             }
 
+            columnStructureWasRebuilt = true
             rightTable.tableColumns.forEach { rightTable.removeTableColumn($0) }
             for column in parent.columns {
                 let identifier = NSUserInterfaceItemIdentifier(column.id.uuidString)
@@ -179,14 +183,30 @@ struct BloodTestsAppKitTableView: NSViewRepresentable {
         }
 
         func refreshIfNeeded(force: Bool) {
-            let dataSignature = makeDataSignature()
+            let dataHash = makeDataHash()
             let selectionSignature = parent.selectedColumnID?.uuidString ?? "nil"
-            let shouldReload = force || dataSignature != lastDataSignature
+            let shouldReload = force || dataHash != lastDataHash
             let selectionChanged = selectionSignature != lastSelectionSignature
 
             if shouldReload {
-                reloadDataPreservingEditor()
-                lastDataSignature = dataSignature
+                let currentRowIDs = parent.rows.map(\.id)
+                let structureUnchanged = !columnStructureWasRebuilt && currentRowIDs == renderedRowIDs
+
+                if structureUnchanged && !shouldDeferReloadForActiveFocus {
+                    // Value-only edit: reload only the rows whose cell values changed.
+                    let changedRows = findChangedRowIndices()
+                    if !changedRows.isEmpty {
+                        let allColumns = IndexSet(0..<parent.columns.count)
+                        rightTable?.reloadData(forRowIndexes: changedRows, columnIndexes: allColumns)
+                    }
+                    updateLastRowHashes()
+                    updateRightHeaderTitlesAndSelection()
+                } else {
+                    reloadDataPreservingEditor()
+                }
+
+                columnStructureWasRebuilt = false
+                lastDataHash = dataHash
             } else if selectionChanged {
                 // Selection-only change: repaint right table cells for column highlight without touching left side.
                 rightTable?.reloadData()
@@ -209,6 +229,8 @@ struct BloodTestsAppKitTableView: NSViewRepresentable {
             rightTable?.reloadData()
             updateRightHeaderTitlesAndSelection()
             pendingReloadAfterEditing = false
+            renderedRowIDs = parent.rows.map(\.id)
+            updateLastRowHashes()
         }
 
         private var shouldDeferReloadForActiveFocus: Bool {
@@ -242,21 +264,42 @@ struct BloodTestsAppKitTableView: NSViewRepresentable {
             }
         }
 
-        private func makeDataSignature() -> String {
-            var parts: [String] = []
-            parts.append("C:\(parent.columns.count)")
-            for column in parent.columns {
-                parts.append("COL:\(column.id.uuidString):\(column.dateText)")
+        private func makeDataHash() -> Int {
+            var h = Hasher()
+            for col in parent.columns {
+                h.combine(col.id)
+                h.combine(col.dateText)
             }
-            parts.append("R:\(parent.rows.count)")
             for row in parent.rows {
-                parts.append("ROW:\(row.id.uuidString):\(row.testName)")
-                let orderedValues = row.values.keys.sorted()
-                for key in orderedValues {
-                    parts.append("V:\(key)=\(row.values[key] ?? "")")
+                h.combine(row.id)
+                h.combine(row.testName)
+                for colID in parent.columns.map(\.id.uuidString) {
+                    h.combine(row.values[colID])
                 }
             }
-            return parts.joined(separator: "|")
+            return h.finalize()
+        }
+
+        private func rowValueHash(_ row: BloodTestRowRecord) -> Int {
+            var h = Hasher()
+            for colID in parent.columns.map(\.id.uuidString) {
+                h.combine(row.values[colID])
+            }
+            return h.finalize()
+        }
+
+        private func updateLastRowHashes() {
+            lastRowValueHashesByID = Dictionary(
+                uniqueKeysWithValues: parent.rows.map { ($0.id, rowValueHash($0)) }
+            )
+        }
+
+        private func findChangedRowIndices() -> IndexSet {
+            var result = IndexSet()
+            for (i, row) in parent.rows.enumerated() where lastRowValueHashesByID[row.id] != rowValueHash(row) {
+                result.insert(i)
+            }
+            return result
         }
 
         func numberOfRows(in tableView: NSTableView) -> Int {

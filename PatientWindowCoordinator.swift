@@ -12,6 +12,7 @@ extension Notification.Name {
     static let quickClinicalCaptureRequested = Notification.Name("quickClinicalCaptureRequested")
 }
 
+@MainActor
 final class PatientWindowCoordinator {
     static let shared = PatientWindowCoordinator()
 
@@ -136,15 +137,17 @@ final class PatientWindowCoordinator {
 
 private final class PatientWindowDelegate: NSObject, NSWindowDelegate {
     let patientID: UUID
-    let onBecomeKey: (UUID) -> Void
-    let onResignKey: (UUID) -> Void
-    let onClose: (UUID) -> Void
+    // NSWindowDelegate callbacks always arrive on the main thread,
+    // so closures are @MainActor to match the coordinator's isolation.
+    let onBecomeKey: @MainActor (UUID) -> Void
+    let onResignKey: @MainActor (UUID) -> Void
+    let onClose: @MainActor (UUID) -> Void
 
     init(
         patientID: UUID,
-        onBecomeKey: @escaping (UUID) -> Void,
-        onResignKey: @escaping (UUID) -> Void,
-        onClose: @escaping (UUID) -> Void
+        onBecomeKey: @escaping @MainActor (UUID) -> Void,
+        onResignKey: @escaping @MainActor (UUID) -> Void,
+        onClose: @escaping @MainActor (UUID) -> Void
     ) {
         self.patientID = patientID
         self.onBecomeKey = onBecomeKey
@@ -153,35 +156,39 @@ private final class PatientWindowDelegate: NSObject, NSWindowDelegate {
     }
 
     func windowDidBecomeKey(_ notification: Notification) {
-        onBecomeKey(patientID)
+        MainActor.assumeIsolated { onBecomeKey(patientID) }
     }
 
     func windowDidResignKey(_ notification: Notification) {
-        onResignKey(patientID)
+        MainActor.assumeIsolated { onResignKey(patientID) }
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
-        if !PatientWindowUnsavedStateStore.shared.hasUnsavedChanges(for: patientID) {
-            return true
+        MainActor.assumeIsolated {
+            guard PatientWindowUnsavedStateStore.shared.hasUnsavedChanges(for: patientID) else {
+                return true
+            }
+
+            let alert = NSAlert()
+            alert.messageText = "Chiudere senza salvare?"
+            alert.informativeText = "Sono presenti modifiche non salvate nella scheda clinica. Se chiudi ora, i dati non salvati andranno persi."
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "Chiudi senza salvare")
+            alert.addButton(withTitle: "Annulla")
+
+            let response = alert.runModal()
+            return response == .alertFirstButtonReturn
         }
-
-        let alert = NSAlert()
-        alert.messageText = "Chiudere senza salvare?"
-        alert.informativeText = "Sono presenti modifiche non salvate nella scheda clinica. Se chiudi ora, i dati non salvati andranno persi."
-        alert.alertStyle = .warning
-        alert.addButton(withTitle: "Chiudi senza salvare")
-        alert.addButton(withTitle: "Annulla")
-
-        let response = alert.runModal()
-        return response == .alertFirstButtonReturn
     }
 
     func windowWillClose(_ notification: Notification) {
-        PatientWindowUnsavedStateStore.shared.clear(for: patientID)
-        AuditTrailService.shared.log(
-            .patientWindowClosed,
-            metadata: ["patient": AuditTrailService.shared.redactedIdentifier(for: patientID)]
-        )
-        onClose(patientID)
+        MainActor.assumeIsolated {
+            PatientWindowUnsavedStateStore.shared.clear(for: patientID)
+            AuditTrailService.shared.log(
+                .patientWindowClosed,
+                metadata: ["patient": AuditTrailService.shared.redactedIdentifier(for: patientID)]
+            )
+            onClose(patientID)
+        }
     }
 }

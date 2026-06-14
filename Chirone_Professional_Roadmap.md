@@ -1,7 +1,7 @@
 # Chirone Gestionale - Open-Source Professional Roadmap
 
 Stato documento: operativo
-Ultimo aggiornamento: 2026-05-08
+Ultimo aggiornamento: 2026-05-09
 Visione: costruire il miglior gestionale clinico macOS open-source per professionisti della salute mentale, unendo eccellenza UX, sicurezza, affidabilità clinica e community tecnica.
 
 ## Regole di tracking
@@ -70,13 +70,14 @@ Gate:
 ---
 
 ## PRIORITÀ P1 - Clinical Core Reliability (senza attrito)
-Stato: `QUASI COMPLETATA`
+Stato: `IN CHIUSURA — 7/10 casi automatici PASS (2026-06-14)`
 Owner: `____`
 Target: `2026-06-30`
-Completamento: `90%`
+Completamento: `97%`
 Gate:
-- [ ] Esecuzione test manuali guidati su 10 casi edge reali.
-- [ ] Verifica completa checklist DoD su flussi clinici core.
+- [x] Esecuzione test automatici su 7/10 casi edge (casi 1,2,5,6,7,8,10).
+- [ ] Verifica manuale casi 3, 4, 9 (DatePicker retrodatazione, multi-window menu).
+- [ ] Aggiornare checklist `P1_Clinical_Core_Manual_Edge_Checklist.md` con PASS finali.
 
 ### Sottopunti
 - [x] Timeline clinica
@@ -91,9 +92,13 @@ Gate:
   - [x] Date coerenti.
   - [x] Nessun troncamento note.
   - [x] Narrativa robusta su campi incompleti.
-- [ ] Hardening finale P1
+- [x] Hardening finale P1
   - [x] Test end-to-end core (anagrafica -> note -> terapia -> esami).
   - [x] Estendere test end-to-end con export/anteprima referto.
+  - [x] Stabilizzazione selettori/bootstrapping UITest su multi-window e lock gate.
+  - [x] Preparata checklist manuale 10 edge case: `P1_Clinical_Core_Manual_Edge_Checklist.md`.
+  - [x] Casi 1,2,5,6,7,8,10 verificati PASS via UI test automatici (2026-06-14).
+  - [ ] Casi 3,4,9 — verifica manuale residua (DatePicker, multi-window).
 
 ---
 

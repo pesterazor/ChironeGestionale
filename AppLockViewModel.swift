@@ -28,6 +28,7 @@ final class AppLockViewModel: ObservableObject {
                     self.lastErrorMessage = nil
                     self.isUnlocked = true
                     self.backgroundedAt = nil
+                    SecureDataCipher.shared.prewarmKey()
                     AuditTrailService.shared.log(.appUnlocked)
                 } else {
                     self.lastErrorMessage = error?.localizedDescription ?? "Autenticazione non riuscita."
@@ -56,6 +57,7 @@ final class AppLockViewModel: ObservableObject {
 
     func lock() {
         isUnlocked = false
+        SecureDataCipher.shared.invalidateSessionCache()
         AuditTrailService.shared.log(.appLocked)
     }
 }

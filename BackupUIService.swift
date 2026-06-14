@@ -356,15 +356,24 @@ final class BackupUIService {
             return
         }
 
-        do {
-            let context = ModelContext(modelContainer)
-            let backupData = try EncryptedBackupService.shared.exportBackup(from: context, password: password)
-            try backupData.write(to: url, options: .atomic)
-            AuditTrailService.shared.log(.backupExported, metadata: ["result": "success"])
-            showInfoAlert(title: "Backup completato", message: "Backup cifrato salvato con successo.")
-        } catch {
-            AuditTrailService.shared.log(.backupExported, metadata: ["result": "failed"])
-            showErrorAlert(title: "Backup non riuscito", error: error)
+        Task {
+            let progressPanel = makeProgressPanel(message: "Backup in corso…")
+            do {
+                // PBKDF2 (600k iterations) + AES-GCM run on a background thread
+                // so the UI stays responsive during the operation.
+                let backupData = try await Task.detached(priority: .userInitiated) { [modelContainer] in
+                    let context = ModelContext(modelContainer)
+                    return try EncryptedBackupService.shared.exportBackup(from: context, password: password)
+                }.value
+                try backupData.write(to: url, options: .atomic)
+                progressPanel.close()
+                AuditTrailService.shared.log(.backupExported, metadata: ["result": "success"])
+                showInfoAlert(title: "Backup completato", message: "Backup cifrato salvato con successo.")
+            } catch {
+                progressPanel.close()
+                AuditTrailService.shared.log(.backupExported, metadata: ["result": "failed"])
+                showErrorAlert(title: "Backup non riuscito", error: error)
+            }
         }
     }
 
@@ -390,24 +399,79 @@ final class BackupUIService {
             return
         }
 
-        do {
-            let backupData = try Data(contentsOf: url)
-            let context = ModelContext(modelContainer)
-            try EncryptedBackupService.shared.restoreBackup(
-                into: context,
-                password: password,
-                backupData: backupData,
-                replaceExisting: true
-            )
-            AuditTrailService.shared.log(.backupRestored, metadata: ["result": "success"])
-            showInfoAlert(title: "Ripristino completato", message: "Dati clinici ripristinati correttamente.")
-        } catch EncryptedBackupError.invalidPassword {
-            AuditTrailService.shared.log(.backupRestored, metadata: ["result": "failed_invalid_password"])
-            showInfoAlert(title: "Password errata", message: "La password del backup non è corretta.")
-        } catch {
-            AuditTrailService.shared.log(.backupRestored, metadata: ["result": "failed"])
-            showErrorAlert(title: "Ripristino non riuscito", error: error)
+        Task {
+            let progressPanel = makeProgressPanel(message: "Ripristino in corso…")
+            do {
+                let backupData = try Data(contentsOf: url)
+                // PBKDF2 + AES-GCM decrypt + SwiftData bulk insert run off main thread.
+                try await Task.detached(priority: .userInitiated) { [modelContainer] in
+                    let context = ModelContext(modelContainer)
+                    try EncryptedBackupService.shared.restoreBackup(
+                        into: context,
+                        password: password,
+                        backupData: backupData,
+                        replaceExisting: true
+                    )
+                }.value
+                progressPanel.close()
+                AuditTrailService.shared.log(.backupRestored, metadata: ["result": "success"])
+                showInfoAlert(title: "Ripristino completato", message: "Dati clinici ripristinati correttamente.")
+            } catch EncryptedBackupError.invalidPassword {
+                progressPanel.close()
+                AuditTrailService.shared.log(.backupRestored, metadata: ["result": "failed_invalid_password"])
+                showInfoAlert(title: "Password errata", message: "La password del backup non è corretta.")
+            } catch {
+                progressPanel.close()
+                AuditTrailService.shared.log(.backupRestored, metadata: ["result": "failed"])
+                showErrorAlert(title: "Ripristino non riuscito", error: error)
+            }
         }
+    }
+
+    private func makeProgressPanel(message: String) -> NSPanel {
+        let panel = NSPanel(
+            contentRect: NSRect(x: 0, y: 0, width: 280, height: 64),
+            styleMask: [.utilityWindow, .titled, .nonactivatingPanel],
+            backing: .buffered,
+            defer: false
+        )
+        panel.title = "Chirone Gestionale"
+        panel.isFloatingPanel = true
+        panel.level = .floating
+        panel.isReleasedWhenClosed = false
+
+        let indicator = NSProgressIndicator()
+        indicator.style = .spinning
+        indicator.controlSize = .regular
+        indicator.startAnimation(nil)
+        indicator.translatesAutoresizingMaskIntoConstraints = false
+
+        let label = NSTextField(labelWithString: message)
+        label.isEditable = false
+        label.isBordered = false
+        label.drawsBackground = false
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.font = .systemFont(ofSize: NSFont.smallSystemFontSize)
+
+        let stack = NSStackView(views: [indicator, label])
+        stack.orientation = .horizontal
+        stack.spacing = 10
+        stack.alignment = .centerY
+        stack.translatesAutoresizingMaskIntoConstraints = false
+
+        if let contentView = panel.contentView {
+            contentView.addSubview(stack)
+            NSLayoutConstraint.activate([
+                stack.centerXAnchor.constraint(equalTo: contentView.centerXAnchor),
+                stack.centerYAnchor.constraint(equalTo: contentView.centerYAnchor),
+                indicator.widthAnchor.constraint(equalToConstant: 16),
+                indicator.heightAnchor.constraint(equalToConstant: 16)
+            ])
+        }
+
+        panel.center()
+        panel.makeKeyAndOrderFront(nil)
+        return panel
     }
 
     func exportPatientPortabilityData(patient: Patient) {

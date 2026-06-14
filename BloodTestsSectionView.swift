@@ -5,6 +5,19 @@ struct BloodTestsSectionView: View {
     @Bindable var patient: Patient
     let onDraftStateChange: (Bool) -> Void
     let onAutoClinicalUpdate: ((String) -> Void)?
+    let onSaved: (() -> Void)?
+
+    init(
+        patient: Patient,
+        onDraftStateChange: @escaping (Bool) -> Void,
+        onAutoClinicalUpdate: ((String) -> Void)? = nil,
+        onSaved: (() -> Void)? = nil
+    ) {
+        self.patient = patient
+        self.onDraftStateChange = onDraftStateChange
+        self.onAutoClinicalUpdate = onAutoClinicalUpdate
+        self.onSaved = onSaved
+    }
 
     @State private var draft = BloodTestsTablePayload.empty
     @State private var persistedDraft = BloodTestsTablePayload.empty
@@ -18,6 +31,7 @@ struct BloodTestsSectionView: View {
     @State private var rowIndexByID: [UUID: Int] = [:]
     @State private var cachedSortedColumns: [BloodTestColumnRecord] = []
     @State private var cachedSortedRows: [BloodTestRowRecord] = []
+    @State private var lastRowsStructureKey: [UUID: String] = [:]
     @FocusState private var isNewExamNameFocused: Bool
 
     private var hasUnsavedChanges: Bool {
@@ -78,6 +92,11 @@ struct BloodTestsSectionView: View {
     private func refreshSortedCaches() {
         cachedSortedColumns = computeSortedColumns(from: draft.columns)
         cachedSortedRows = computeSortedRows(from: draft.rows)
+        lastRowsStructureKey = currentRowsStructureKey()
+    }
+
+    private func currentRowsStructureKey() -> [UUID: String] {
+        Dictionary(uniqueKeysWithValues: draft.rows.map { ($0.id, $0.testName) })
     }
 
     var body: some View {
@@ -113,10 +132,23 @@ struct BloodTestsSectionView: View {
         }
         .onChange(of: draft.rows) { _, _ in
             rebuildRowIndex()
-            refreshSortedCaches()
+            let currentKey = currentRowsStructureKey()
+            if currentKey != lastRowsStructureKey {
+                // Row added, removed, or renamed: full resort required.
+                lastRowsStructureKey = currentKey
+                cachedSortedRows = computeSortedRows(from: draft.rows)
+            } else {
+                // Only cell values changed: propagate updated values to sorted rows
+                // in-place without paying the sort cost (O(n) vs O(n log n)).
+                for i in cachedSortedRows.indices {
+                    if let idx = rowIndexByID[cachedSortedRows[i].id] {
+                        cachedSortedRows[i] = draft.rows[idx]
+                    }
+                }
+            }
         }
         .onChange(of: draft.columns) { _, _ in
-            refreshSortedCaches()
+            cachedSortedColumns = computeSortedColumns(from: draft.columns)
         }
         .onDisappear {
             onDraftStateChange(false)
@@ -343,6 +375,7 @@ private extension BloodTestsSectionView {
         if let noteText = BloodTestsSectionViewModel.bloodTestsRequestNoteText(from: previous, to: normalized) {
             onAutoClinicalUpdate?(noteText)
         }
+        onSaved?()
     }
 
     func dateText(from date: Date) -> String {

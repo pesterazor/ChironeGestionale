@@ -17,7 +17,6 @@ final class ChironeGestionaleUITestsLaunchTests: XCTestCase {
         continueAfterFailure = false
     }
 
-    @MainActor
     func testLaunch() throws {
         let app = XCUIApplication()
         app.launchArguments.append("-UITEST_DISABLE_LOCK")

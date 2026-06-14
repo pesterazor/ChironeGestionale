@@ -398,6 +398,12 @@ struct ChironeGestionaleApp: App {
     @StateObject private var printCommandState = PrintCommandState()
     @StateObject private var commandPaletteState = CommandPaletteState()
 
+    init() {
+        // Build autocomplete indices off the main thread so the first
+        // Therapy section open is instant instead of parsing 535 KB of JSON.
+        Task.detached(priority: .utility) { _ = ActiveIngredientAutocomplete.shared }
+    }
+
     var sharedModelContainer: ModelContainer = {
         let schema = Schema([
             Patient.self,

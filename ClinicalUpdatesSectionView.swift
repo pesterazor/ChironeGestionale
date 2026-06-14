@@ -486,6 +486,17 @@ struct ClinicalUpdatesSectionView: View {
     @State private var lastAutosavedSnapshot: DraftSnapshot?
 
     let onDraftStateChange: (Bool) -> Void
+    let onSaved: (() -> Void)?
+
+    init(
+        patient: Patient,
+        onDraftStateChange: @escaping (Bool) -> Void,
+        onSaved: (() -> Void)? = nil
+    ) {
+        self.patient = patient
+        self.onDraftStateChange = onDraftStateChange
+        self.onSaved = onSaved
+    }
 
     private let notesPageSize = 5
     private let autosaveDebounceNanoseconds: UInt64 = 10_000_000_000
@@ -588,6 +599,7 @@ struct ClinicalUpdatesSectionView: View {
         notesPageOffset = 0
         refreshTimelineNotes()
         onDraftStateChange(hasUnsavedDrafts)
+        onSaved?()
     }
 
     private func restoreDraftIfAvailable() {

@@ -12,8 +12,24 @@ final class SecureDataCipher {
 
     private let service = "it.chirone.gestionale"
     private let account = "patient-data-symmetric-key"
+    private let keyLock = NSLock()
+    private var cachedKey: SymmetricKey?
 
     private init() {}
+
+    // Warms the in-memory key cache immediately after biometric unlock,
+    // so the first clinical field access doesn't pay the Keychain round-trip.
+    func prewarmKey() {
+        _ = try? symmetricKey()
+    }
+
+    // Clears the cached key on app lock. The next operation will re-read
+    // from the Keychain, which is unavailable while the device is locked.
+    func invalidateSessionCache() {
+        keyLock.lock()
+        defer { keyLock.unlock() }
+        cachedKey = nil
+    }
 
     func encrypt(_ plaintext: String) -> String? {
         guard !plaintext.isEmpty else { return nil }
@@ -49,13 +65,21 @@ final class SecureDataCipher {
     }
 
     private func symmetricKey() throws -> SymmetricKey {
-        if let existing = try readKeyData() {
-            return SymmetricKey(data: existing)
-        }
+        keyLock.lock()
+        defer { keyLock.unlock() }
 
-        let key = SymmetricKey(size: .bits256)
-        let raw = key.withUnsafeBytes { Data($0) }
-        try storeKeyData(raw)
+        if let key = cachedKey { return key }
+
+        let key: SymmetricKey
+        if let existing = try readKeyData() {
+            key = SymmetricKey(data: existing)
+        } else {
+            let newKey = SymmetricKey(size: .bits256)
+            let raw = newKey.withUnsafeBytes { Data($0) }
+            try storeKeyData(raw)
+            key = newKey
+        }
+        cachedKey = key
         return key
     }
 
