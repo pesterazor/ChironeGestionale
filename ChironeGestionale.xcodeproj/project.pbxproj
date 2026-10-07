@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		032A05D32FEDB72000912B21 /* PatientPrescriptionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 032A05D22FEDB72000912B21 /* PatientPrescriptionService.swift */; };
+		032A05D52FEDB73A00912B21 /* PrescriptionPreviewWindowCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 032A05D42FEDB73A00912B21 /* PrescriptionPreviewWindowCoordinator.swift */; };
 		0E0BE79C2FB9CEF300B26FC2 /* PatientTherapySectionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E0BE79A2FB9CEF300B26FC2 /* PatientTherapySectionView.swift */; };
 		0E0BE79D2FB9CEF300B26FC2 /* ClinicalSharedViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E0BE7982FB9CEF300B26FC2 /* ClinicalSharedViews.swift */; };
 		0E0BE79E2FB9CEF300B26FC2 /* QuickClinicalCaptureSheet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0E0BE79B2FB9CEF300B26FC2 /* QuickClinicalCaptureSheet.swift */; };
@@ -56,6 +58,8 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		032A05D22FEDB72000912B21 /* PatientPrescriptionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PatientPrescriptionService.swift; sourceTree = "<group>"; };
+		032A05D42FEDB73A00912B21 /* PrescriptionPreviewWindowCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PrescriptionPreviewWindowCoordinator.swift; sourceTree = "<group>"; };
 		0E0BE7982FB9CEF300B26FC2 /* ClinicalSharedViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClinicalSharedViews.swift; sourceTree = "<group>"; };
 		0E0BE7992FB9CEF300B26FC2 /* PatientClinicalDataSectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PatientClinicalDataSectionView.swift; sourceTree = "<group>"; };
 		0E0BE79A2FB9CEF300B26FC2 /* PatientTherapySectionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PatientTherapySectionView.swift; sourceTree = "<group>"; };
@@ -169,6 +173,8 @@
 				0E87E5D62FA14E7A00D79721 /* PatientReportService.swift */,
 				0EDE0B2C2FA29AEF0022EF38 /* ReportPreviewWindowCoordinator.swift */,
 				0E4C62A52FAD2A43008358EA /* Chirone_Professional_Roadmap.md */,
+				032A05D22FEDB72000912B21 /* PatientPrescriptionService.swift */,
+				032A05D42FEDB73A00912B21 /* PrescriptionPreviewWindowCoordinator.swift */,
 			);
 			sourceTree = "<group>";
 		};
@@ -338,6 +344,7 @@
 				0EDF2B572F9A81A600DB3D38 /* PatientSelectionSummaryView.swift in Sources */,
 				0E87E5D72FA14E7A00D79721 /* PatientReportService.swift in Sources */,
 				0E87E5B92FA1299200D79721 /* AppLockGateView.swift in Sources */,
+				032A05D52FEDB73A00912B21 /* PrescriptionPreviewWindowCoordinator.swift in Sources */,
 				0ED4393A2F9E9A5A003124BC /* BloodTestsSectionView.swift in Sources */,
 				0EDF2B592F9A81E300DB3D38 /* PatientClinicalWindowView.swift in Sources */,
 				0E87E59D2F9F9E3900D79721 /* BloodTestsSectionViewModel.swift in Sources */,
@@ -348,6 +355,7 @@
 				0E87E5992F9F929000D79721 /* BloodTestsModels.swift in Sources */,
 				0E0BE79C2FB9CEF300B26FC2 /* PatientTherapySectionView.swift in Sources */,
 				0E0BE79D2FB9CEF300B26FC2 /* ClinicalSharedViews.swift in Sources */,
+				032A05D32FEDB72000912B21 /* PatientPrescriptionService.swift in Sources */,
 				0E0BE79E2FB9CEF300B26FC2 /* QuickClinicalCaptureSheet.swift in Sources */,
 				0E0BE79F2FB9CEF300B26FC2 /* PatientClinicalDataSectionView.swift in Sources */,
 				0EB9AC612F980D6D00044B4B /* ClinicalNote.swift in Sources */,

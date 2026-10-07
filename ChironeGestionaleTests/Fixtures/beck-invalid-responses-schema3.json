@@ -1,0 +1,32 @@
+{
+  "format": "chirone-backup",
+  "version": 1,
+  "createdAt": "2026-01-01T00:00:00Z",
+  "cipher": {
+    "algorithm": "AES-GCM-256",
+    "nonceBase64": "7bcn6Qw7fBgZ/ay5",
+    "aadBase64": "eyJjcmVhdGVkQXQiOiIyMDI2LTAxLTAxVDAwOjAwOjAwWiIsImZvcm1hdCI6ImNoaXJvbmUtYmFja3VwIiwia2RmQWxnb3JpdGhtIjoiUEJLREYyLUhNQUMtU0hBMjU2Iiwia2RmSXRlcmF0aW9ucyI6NjAwMDAwLCJzY2hlbWFWZXJzaW9uIjozLCJ2ZXJzaW9uIjoxfQ=="
+  },
+  "kdf": {
+    "algorithm": "PBKDF2-HMAC-SHA256",
+    "saltBase64": "z5K1oFacAu/AKSwm6NZUVg==",
+    "iterations": 600000,
+    "keyLength": 32
+  },
+  "wrappedDEKBase64": "uuNwvEurCqVfYkvaBogvRCHXePDZw48uRPczVF0vJ6uzDZfVFPAi7tsc6GOFlb6gC9t5/IDAIR1MWuj4",
+  "wrappedDEKNonceBase64": "uuNwvEurCqVfYkva",
+  "payloadBase64": "7bcn6Qw7fBgZ/ay5f8DP5igvhwodOYVcamWuSbkbiXtqf3Nr2aNLSqmOYFxpxC+gePalg/N1vsy5OGaPuwo4C+R061k9hGmZvie3ou9OHaToYBAUgZUWQW4izCkuF0N/LYT/pei9QQEo7r3PzDVFDHjO5+aorKxwKhT9y38BgQOPW6kVbz+wrsPJokY0Cot807vOY2RO/kEg9FdwVJH3Cp15ZupVROwIH+XHi1VQOMWjmV7bOZCDOKq8XkxoqFQcZCyafJYXIX2XFyPqmYfN2ScJ0v1roN6AwFLxcWvR7WJH7pAq4cAumSDtkyIEdsIkM8JeDMOZ95mLxg+ve8hYSdqZn069JQ/Vrq10bPCfcvJkoswRkEY9DwRihP9hjbdSAbMoBE+b35HOzpIyUJbBUziW1SAQ/wX9cmAW4YS3NhiMN+VIHWVliTnDGSAFl4tjjeE4iJYtqpcDp/aK1VA11F7foRdME8bC9Vtfr5duI6X85c4QtKpgs4UBAu4qD4bvnwgN5ZU2I7c770WrooRn1wx13Gk8oGRwJKV2uwxF96kq0I5q0t6XrLNCrZ7jSSPGkaMhD3hFqUyySBH89t0WDqQ32HJFg9RzKRfxEcJ29p8BpzREtze1hx4axgVvRjHMgTz5GYZ5RvyUPq5moPJeLNsFrQNLFUYgKGVB5RMCv3zGGMCmKndDEQj9Qd/2jc+4r5yR2hK6sE8cpw6jMeQeyUMZzoT6b49TOYP4hrJ/52KUHKnMB4nHQTgVz2taJKgFYzvk029dwrnox/vw/p4qEZQ2NU4wZ1OCLRCws5RuHroUDznqE8K3Tc7CLSpz3sCS3IeCbgHLJ1njyYdSzqD4s2pDiMVZvFQNv2kxqig6mSUumTTl2TG0C+FwSLVqeWL9k1AURiXpRe1a2NopoJlRWrzBXdHqct5CxGZlA5mhGJlkYICc8DuUJzCtIDJC349EYMbkLL4ZhCzQSs5Wtv2zN4zC1uG18PW1PYSbgE1MG7EheV1m9gnsT0jEYY+jCZst4NmNTnuFqV4j3KdQ8wcyJaTznul1tiRbxzFWaIbaVJCPJHmSQGFYi7ZnU/fNApuyHlXc3HlpJp3brUFpM8gFZw0dZAs456pMDnK+XZDISniJLlLo/H6BHF1j3yj9NFGakEPxxW2VMiJb+2+4VPrWJEzT8TrpMUElIrwtlalzuSRcxgtklveSxqEHsfs2nVWpHJobfkSfW+lzucD2EbLhDehKGhBRwFcc3OrOusuGGGLaiwiMHynMU//eAhwZuXVq+h+VBtkktxbpoSZuwUrVDF/ShNxZ/StWywr3Vg==",
+  "metadata": {
+    "appVersion": "fixture",
+    "schemaVersion": 3,
+    "recordCounts": {
+      "patients": 1,
+      "clinicalNotes": 0,
+      "therapyItems": 0,
+      "phq9Assessments": 0,
+      "gad7Assessments": 0,
+      "mdqAssessments": 0,
+      "beckAssessments": 1
+    }
+  }
+}

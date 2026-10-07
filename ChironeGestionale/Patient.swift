@@ -65,6 +65,21 @@ final class Patient {
     @Relationship(deleteRule: .cascade, inverse: \ClinicalNote.patient)
     var clinicalNotes: [ClinicalNote]
 
+    @Relationship(deleteRule: .cascade, inverse: \PHQ9Assessment.patient)
+    var phq9Assessments: [PHQ9Assessment]
+
+    @Relationship(deleteRule: .cascade, inverse: \GAD7Assessment.patient)
+    var gad7Assessments: [GAD7Assessment]
+
+    @Relationship(deleteRule: .cascade, inverse: \MDQAssessment.patient)
+    var mdqAssessments: [MDQAssessment]
+
+    @Relationship(deleteRule: .cascade, inverse: \BeckAssessment.patient)
+    var beckAssessments: [BeckAssessment] = []
+
+    @Relationship(deleteRule: .cascade, inverse: \MADRSAssessment.patient)
+    var madrsAssessments: [MADRSAssessment] = []
+
     // MARK: - Metadati
     var createdAt: Date
     var updatedAt: Date
@@ -107,6 +122,11 @@ final class Patient {
         bloodTestsTableJSON: String? = nil,
         therapyItems: [TherapyMedication] = [],
         clinicalNotes: [ClinicalNote] = [],
+        phq9Assessments: [PHQ9Assessment] = [],
+        gad7Assessments: [GAD7Assessment] = [],
+        mdqAssessments: [MDQAssessment] = [],
+        beckAssessments: [BeckAssessment] = [],
+        madrsAssessments: [MADRSAssessment] = [],
         createdAt: Date = .now,
         updatedAt: Date = .now
     ) {
@@ -147,6 +167,11 @@ final class Patient {
         self.bloodTestsTableJSON = bloodTestsTableJSON
         self.therapyItems = therapyItems
         self.clinicalNotes = clinicalNotes
+        self.phq9Assessments = phq9Assessments
+        self.gad7Assessments = gad7Assessments
+        self.mdqAssessments = mdqAssessments
+        self.beckAssessments = beckAssessments
+        self.madrsAssessments = madrsAssessments
         self.createdAt = createdAt
         self.updatedAt = updatedAt
     }
@@ -228,91 +253,99 @@ extension Patient {
         return fallback
     }
 
-    private func encryptedValue(_ plaintext: String) -> String? {
-        SecureDataCipher.shared.encrypt(plaintext)
+    private func canReplaceProtectedValue(_ encrypted: String?) -> Bool {
+        guard let encrypted, !encrypted.isEmpty else { return true }
+        // An unavailable key must not make an existing value look safe to overwrite.
+        return SecureDataCipher.shared.decrypt(encrypted) != nil
     }
 
     var readablePrimaryDiagnosis: String {
         decrypted(encryptedPrimaryDiagnosis, fallback: primaryDiagnosis)
     }
 
-    func protectPrimaryDiagnosis(_ value: String) {
-        if let encrypted = encryptedValue(value) {
-            encryptedPrimaryDiagnosis = encrypted
-            primaryDiagnosis = ""
-        } else {
+    @discardableResult
+    func protectPrimaryDiagnosis(_ value: String, encrypt: (String) -> String? = { SecureDataCipher.shared.encrypt($0) }) -> Bool {
+        guard canReplaceProtectedValue(encryptedPrimaryDiagnosis) else { return false }
+        if value.isEmpty {
             encryptedPrimaryDiagnosis = nil
-            primaryDiagnosis = value
+            primaryDiagnosis = ""
+            return true
         }
+        guard let encrypted = encrypt(value) else { return false }
+        encryptedPrimaryDiagnosis = encrypted
+        primaryDiagnosis = ""
+        return true
     }
 
     var readableSecondaryDiagnosis: String {
         decrypted(encryptedSecondaryDiagnosis, fallback: secondaryDiagnosis)
     }
 
-    func protectSecondaryDiagnosis(_ value: String) {
-        if let encrypted = encryptedValue(value) {
-            encryptedSecondaryDiagnosis = encrypted
-            secondaryDiagnosis = ""
-        } else {
+    @discardableResult
+    func protectSecondaryDiagnosis(_ value: String, encrypt: (String) -> String? = { SecureDataCipher.shared.encrypt($0) }) -> Bool {
+        guard canReplaceProtectedValue(encryptedSecondaryDiagnosis) else { return false }
+        if value.isEmpty {
             encryptedSecondaryDiagnosis = nil
-            secondaryDiagnosis = value
+            secondaryDiagnosis = ""
+            return true
         }
+        guard let encrypted = encrypt(value) else { return false }
+        encryptedSecondaryDiagnosis = encrypted
+        secondaryDiagnosis = ""
+        return true
     }
 
     var readableMedicalComorbidities: String {
         decrypted(encryptedMedicalComorbidities, fallback: medicalComorbidities ?? "")
     }
 
-    func protectMedicalComorbidities(_ value: String) {
-        let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !normalized.isEmpty else {
+    @discardableResult
+    func protectMedicalComorbidities(_ value: String, encrypt: (String) -> String? = { SecureDataCipher.shared.encrypt($0) }) -> Bool {
+        guard canReplaceProtectedValue(encryptedMedicalComorbidities) else { return false }
+        if value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             encryptedMedicalComorbidities = nil
             medicalComorbidities = nil
-            return
+            return true
         }
-
-        if let encrypted = encryptedValue(value) {
-            encryptedMedicalComorbidities = encrypted
-            medicalComorbidities = nil
-        } else {
-            encryptedMedicalComorbidities = nil
-            medicalComorbidities = value.isEmpty ? nil : value
-        }
+        guard let encrypted = encrypt(value) else { return false }
+        encryptedMedicalComorbidities = encrypted
+        medicalComorbidities = nil
+        return true
     }
 
     var readableRemotePsychiatricHistory: String {
         decrypted(encryptedRemotePsychiatricHistory, fallback: remotePsychiatricHistory ?? "")
     }
 
-    func protectRemotePsychiatricHistory(_ value: String) {
-        let normalized = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !normalized.isEmpty else {
+    @discardableResult
+    func protectRemotePsychiatricHistory(_ value: String, encrypt: (String) -> String? = { SecureDataCipher.shared.encrypt($0) }) -> Bool {
+        guard canReplaceProtectedValue(encryptedRemotePsychiatricHistory) else { return false }
+        if value.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             encryptedRemotePsychiatricHistory = nil
             remotePsychiatricHistory = nil
-            return
+            return true
         }
-
-        if let encrypted = encryptedValue(value) {
-            encryptedRemotePsychiatricHistory = encrypted
-            remotePsychiatricHistory = nil
-        } else {
-            encryptedRemotePsychiatricHistory = nil
-            remotePsychiatricHistory = value.isEmpty ? nil : value
-        }
+        guard let encrypted = encrypt(value) else { return false }
+        encryptedRemotePsychiatricHistory = encrypted
+        remotePsychiatricHistory = nil
+        return true
     }
 
     var readableAllergies: String {
         decrypted(encryptedAllergies, fallback: allergies)
     }
 
-    func protectAllergies(_ value: String) {
-        if let encrypted = encryptedValue(value) {
-            encryptedAllergies = encrypted
-            allergies = ""
-        } else {
+    @discardableResult
+    func protectAllergies(_ value: String, encrypt: (String) -> String? = { SecureDataCipher.shared.encrypt($0) }) -> Bool {
+        guard canReplaceProtectedValue(encryptedAllergies) else { return false }
+        if value.isEmpty {
             encryptedAllergies = nil
-            allergies = value
+            allergies = ""
+            return true
         }
+        guard let encrypted = encrypt(value) else { return false }
+        encryptedAllergies = encrypted
+        allergies = ""
+        return true
     }
 }

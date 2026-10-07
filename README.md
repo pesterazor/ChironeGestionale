@@ -32,6 +32,7 @@ Chirone è pensato per:
 - 💊 **Terapia psicofarmacologica** strutturata con inserimento, modifica e salvataggio rapido.
 - 🧪 **Esami ematochimici** in tabella avanzata con colonne data, valori e calcoli derivati.
 - 📄 **Referto PDF** con anteprima dedicata ed export.
+- 📋 **Scale psicometriche**: PHQ-9, GAD-7, MDQ, BAI, BDI-II e MADRS in italiano, con storico, modifica della data delle valutazioni già salvate, andamento e inclusione opzionale nel referto. [BAI e BDI-II](BeckScales.md) · [MADRS e modifica date](MADRS.md).
 - 🔐 **App Lock** con timeout di ri-autenticazione.
 - 🛡️ **Cifratura campi sensibili** e **backup cifrato con restore**.
 - 📚 **Audit trail** interno per eventi critici (in evoluzione progressiva).
@@ -95,6 +96,7 @@ Chirone è pensato per:
 - Per stato compliance operativo: `COMPLIANCE_READINESS.md`.
 
 ## 🧪 Qualità software
+- [Revisione del codice del 6 ottobre 2026](CodeReview.md): correzioni applicate, benchmark e verifica finale (68 test superati, build Debug e Release).
 - Test unitari su componenti core clinici e backup/restore.
 - Test UI su flussi principali (creazione paziente, nota, terapia, esami, anteprima referto).
 - Strategia qualità in evoluzione continua secondo roadmap.

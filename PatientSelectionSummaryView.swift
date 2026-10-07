@@ -4,6 +4,7 @@ struct PatientSelectionSummaryView: View {
     @Bindable var patient: Patient
     let openAction: () -> Void
 
+    @State private var showingEncryptionError = false
     @State private var birthPlaceSuggestions: [ItalianTaxCode.PlaceSuggestion] = []
     @State private var showBirthPlaceSuggestions = false
     @FocusState private var isBirthPlaceFocused: Bool
@@ -145,7 +146,7 @@ struct PatientSelectionSummaryView: View {
                         HStack(alignment: .top, spacing: 12) {
                             VStack(alignment: .leading, spacing: 6) {
                                 demographicTitle("Nome *")
-                                TextField("", text: $patient.firstName, prompt: Text("Nome"))
+                                TextField("Nome", text: $patient.firstName, prompt: Text("Nome"))
                                     .onChange(of: patient.firstName) { _, _ in
                                         patient.updatedAt = .now
                                         autoFillTaxCodeIfPossible()
@@ -155,7 +156,7 @@ struct PatientSelectionSummaryView: View {
 
                             VStack(alignment: .leading, spacing: 6) {
                                 demographicTitle("Cognome *")
-                                TextField("", text: $patient.lastName, prompt: Text("Cognome"))
+                                TextField("Cognome", text: $patient.lastName, prompt: Text("Cognome"))
                                     .onChange(of: patient.lastName) { _, _ in
                                         patient.updatedAt = .now
                                         autoFillTaxCodeIfPossible()
@@ -168,7 +169,7 @@ struct PatientSelectionSummaryView: View {
                             VStack(alignment: .leading, spacing: 6) {
                                 demographicTitle("Data di nascita *")
                                 HStack(spacing: 8) {
-                                    DatePicker("", selection: birthDateBinding, displayedComponents: .date)
+                                    DatePicker("Data di nascita", selection: birthDateBinding, in: ...Date(), displayedComponents: .date)
                                         .labelsHidden()
                                         .fixedSize(horizontal: true, vertical: false)
                                         .onChange(of: patient.dateOfBirth) { _, _ in
@@ -193,8 +194,7 @@ struct PatientSelectionSummaryView: View {
 
                             VStack(alignment: .leading, spacing: 6) {
                                 demographicTitle("Genere")
-                                    .frame(width: 280, alignment: .leading)
-                                Picker("", selection: Binding(
+                                Picker("Genere", selection: Binding(
                                     get: { patient.gender ?? "" },
                                     set: { patient.gender = $0.isEmpty ? nil : $0 }
                                 )) {
@@ -204,14 +204,13 @@ struct PatientSelectionSummaryView: View {
                                 }
                                 .labelsHidden()
                                 .pickerStyle(.segmented)
-                                .frame(width: 280, alignment: .leading)
+                                .frame(maxWidth: .infinity, alignment: .leading)
                                 .onChange(of: patient.gender) { _, _ in
                                     patient.updatedAt = .now
                                     autoFillTaxCodeIfPossible()
                                 }
                             }
-                            .frame(width: 280, alignment: .leading)
-                            .frame(maxWidth: .infinity, alignment: .trailing)
+                            .frame(maxWidth: .infinity, alignment: .leading)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -219,7 +218,7 @@ struct PatientSelectionSummaryView: View {
                             VStack(alignment: .leading, spacing: 6) {
                                 demographicTitle("Codice fiscale")
                                 HStack(spacing: 8) {
-                                    TextField("", text: $patient.taxCode, prompt: Text("Codice fiscale"))
+                                    TextField("Codice fiscale", text: $patient.taxCode, prompt: Text("Codice fiscale"))
                                         .onChange(of: patient.taxCode) { _, _ in patient.updatedAt = .now }
 
                                     Button("Ricalcola") {
@@ -234,7 +233,7 @@ struct PatientSelectionSummaryView: View {
                         HStack(alignment: .top, spacing: 12) {
                             VStack(alignment: .leading, spacing: 6) {
                                 demographicTitle("Luogo di nascita")
-                                TextField("", text: $patient.placeOfBirth, prompt: Text("Es. Torino"))
+                                TextField("Es. Torino", text: $patient.placeOfBirth, prompt: Text("Es. Torino"))
                                     .focused($isBirthPlaceFocused)
                                     .onChange(of: patient.placeOfBirth) { _, _ in
                                         patient.updatedAt = .now
@@ -333,19 +332,21 @@ struct PatientSelectionSummaryView: View {
                         HStack(alignment: .top, spacing: 12) {
                             VStack(alignment: .leading, spacing: 6) {
                                 demographicTitle("Telefono")
-                                TextField("", text: $patient.phoneNumber, prompt: Text("Numero di telefono"))
+                                TextField("Telefono", text: $patient.phoneNumber, prompt: Text("Numero di telefono"))
+                                    .onChange(of: patient.phoneNumber) { _, _ in patient.updatedAt = .now }
                             }
                             .frame(maxWidth: .infinity)
 
                             VStack(alignment: .leading, spacing: 6) {
                                 demographicTitle("Emergenza")
-                                TextField("", text: $patient.emergencyContact, prompt: Text("Contatto di emergenza"))
+                                TextField("Contatto di emergenza", text: $patient.emergencyContact, prompt: Text("Contatto di emergenza"))
+                                    .onChange(of: patient.emergencyContact) { _, _ in patient.updatedAt = .now }
                             }
                             .frame(maxWidth: .infinity)
 
                             VStack(alignment: .leading, spacing: 6) {
                                 demographicTitle("Esenzioni")
-                                TextField("", text: $patient.exemptions, prompt: Text("Esenzioni"))
+                                TextField("Esenzioni", text: $patient.exemptions, prompt: Text("Esenzioni"))
                                     .onChange(of: patient.exemptions) { _, _ in patient.updatedAt = .now }
                             }
                             .frame(maxWidth: .infinity)
@@ -354,21 +355,21 @@ struct PatientSelectionSummaryView: View {
                         HStack(alignment: .top, spacing: 12) {
                             VStack(alignment: .leading, spacing: 6) {
                                 demographicTitle("Medico di famiglia (MMG)")
-                                TextField("", text: $patient.generalPractitioner, prompt: Text("MMG"))
+                                TextField("MMG", text: $patient.generalPractitioner, prompt: Text("MMG"))
                                     .onChange(of: patient.generalPractitioner) { _, _ in patient.updatedAt = .now }
                             }
                             .frame(maxWidth: .infinity)
 
                             VStack(alignment: .leading, spacing: 6) {
                                 demographicTitle("CSM di riferimento")
-                                TextField("", text: $patient.referenceCSM, prompt: Text("CSM"))
+                                TextField("CSM", text: $patient.referenceCSM, prompt: Text("CSM"))
                                     .onChange(of: patient.referenceCSM) { _, _ in patient.updatedAt = .now }
                             }
                             .frame(maxWidth: .infinity)
 
                             VStack(alignment: .leading, spacing: 6) {
                                 demographicTitle("Curante di riferimento")
-                                TextField("", text: $patient.referringClinician, prompt: Text("Curante"))
+                                TextField("Curante", text: $patient.referringClinician, prompt: Text("Curante"))
                                     .onChange(of: patient.referringClinician) { _, _ in patient.updatedAt = .now }
                             }
                             .frame(maxWidth: .infinity)
@@ -381,7 +382,9 @@ struct PatientSelectionSummaryView: View {
                                     "",
                                     text: Binding(
                                         get: { patient.readablePrimaryDiagnosis },
-                                        set: { patient.protectPrimaryDiagnosis($0) }
+                                        set: {
+                                            if !patient.protectPrimaryDiagnosis($0) { showingEncryptionError = true }
+                                        }
                                     ),
                                     prompt: Text("Diagnosi principale")
                                 )
@@ -396,7 +399,9 @@ struct PatientSelectionSummaryView: View {
                                     "",
                                     text: Binding(
                                         get: { patient.readableSecondaryDiagnosis },
-                                        set: { patient.protectSecondaryDiagnosis($0) }
+                                        set: {
+                                            if !patient.protectSecondaryDiagnosis($0) { showingEncryptionError = true }
+                                        }
                                     ),
                                     prompt: Text("Diagnosi secondaria")
                                 )
@@ -411,6 +416,7 @@ struct PatientSelectionSummaryView: View {
                                 demographicTitle("Privacy")
                                 Toggle("Consenso firmato", isOn: $patient.privacyConsentSigned)
                                     .toggleStyle(.switch)
+                                    .onChange(of: patient.privacyConsentSigned) { _, _ in patient.updatedAt = .now }
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -431,6 +437,11 @@ struct PatientSelectionSummaryView: View {
         }
         .transaction { transaction in
             transaction.animation = nil
+        }
+        .alert("Modifica non salvata", isPresented: $showingEncryptionError) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text("Impossibile cifrare la diagnosi. Il valore precedente è stato conservato; riprova dopo aver sbloccato l’app.")
         }
         .onAppear {
             hydrateResidenceFieldsIfNeeded()

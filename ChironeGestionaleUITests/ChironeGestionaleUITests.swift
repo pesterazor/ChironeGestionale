@@ -282,7 +282,11 @@ final class ChironeGestionaleUITests: XCTestCase {
 
         let printButton = app.buttons["report_preview_print_button"]
         XCTAssertTrue(printButton.waitForExistence(timeout: 3), "Print button must be present in preview")
-        XCTAssertTrue(printButton.isEnabled, "Print button must be enabled")
+        let printEnabled = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "enabled == true"),
+            object: printButton
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [printEnabled], timeout: 3), .completed, "Print button must be enabled")
     }
 
     /// Case 10: Draft nota clinica recuperato correttamente dopo chiusura finestra senza salvataggio.
@@ -442,5 +446,81 @@ final class ChironeGestionaleUITests: XCTestCase {
 
         let printButton = app.buttons["report_preview_print_button"]
         XCTAssertTrue(printButton.waitForExistence(timeout: 3))
+
+        let reloadButton = app.buttons["report_composer_reload_button"]
+        let updatePreviewButton = app.buttons["report_composer_update_preview_button"]
+        let titleField = app.textFields["report_composer_title_field"]
+        let demographicsToggle = app.switches["report_composer_toggle_demographics"]
+
+        XCTAssertTrue(reloadButton.waitForExistence(timeout: 3))
+        XCTAssertTrue(updatePreviewButton.waitForExistence(timeout: 3))
+        XCTAssertTrue(titleField.waitForExistence(timeout: 3))
+        XCTAssertTrue(demographicsToggle.waitForExistence(timeout: 3))
+
+        clickWhenHittable(titleField)
+        titleField.typeKey("a", modifierFlags: [.command])
+        titleField.typeText("Relazione clinica personalizzata")
+        XCTAssertEqual(titleField.value as? String, "Relazione clinica personalizzata")
+
+        clickWhenHittable(demographicsToggle)
+        let stalePreviewIndicator = app.staticTexts["report_composer_preview_stale"]
+        XCTAssertTrue(stalePreviewIndicator.waitForExistence(timeout: 3))
+
+        clickWhenHittable(updatePreviewButton)
+        XCTAssertTrue(stalePreviewIndicator.waitForNonExistence(timeout: 3))
+    }
+
+    @MainActor
+    func testPrescriptionComposerUsesManualPreviewRefresh() throws {
+        let app = launchAppForClinicalFlow()
+        waitForNewPatientSheet(in: app)
+
+        let firstName = app.textFields["new_patient_first_name"]
+        clickWhenHittable(firstName)
+        firstName.typeText("Lucia")
+        let lastName = app.textFields["new_patient_last_name"]
+        clickWhenHittable(lastName)
+        lastName.typeText("Verdi")
+        let birthPlace = app.textFields["new_patient_birth_place"]
+        clickWhenHittable(birthPlace)
+        birthPlace.typeText("Milano")
+        app.buttons["create_patient_button"].click()
+        app.buttons["open_patient_clinical_button"].click()
+
+        let addTherapy = app.buttons["therapy_add_medication_button"]
+        XCTAssertTrue(addTherapy.waitForExistence(timeout: 5))
+        addTherapy.click()
+        let medication = app.textFields["Farmaco"].firstMatch
+        clickWhenHittable(medication)
+        medication.typeText("Sertralina")
+        let dosage = app.textFields["Dosaggio"].firstMatch
+        clickWhenHittable(dosage)
+        dosage.typeText("50 mg")
+        let posology = app.textFields["Posologia"].firstMatch
+        clickWhenHittable(posology)
+        posology.typeText("una compressa al mattino")
+        let saveTherapy = app.buttons["therapy_save_button"]
+        XCTAssertTrue(saveTherapy.waitForExistence(timeout: 3))
+        saveTherapy.click()
+
+        app.typeKey("p", modifierFlags: [.command, .shift])
+
+        let composerTitle = app.staticTexts["prescription_preview_title"]
+        XCTAssertTrue(composerTitle.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["prescription_preview_save_button"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["prescription_preview_print_button"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["prescription_composer_add_medication_button"].waitForExistence(timeout: 3))
+
+        let titleField = app.textFields["prescription_composer_title_field"]
+        XCTAssertTrue(titleField.waitForExistence(timeout: 3))
+        clickWhenHittable(titleField)
+        titleField.typeKey("a", modifierFlags: [.command])
+        titleField.typeText("Prescrizione personalizzata")
+
+        let stalePreviewIndicator = app.staticTexts["prescription_composer_preview_stale"]
+        XCTAssertTrue(stalePreviewIndicator.waitForExistence(timeout: 3))
+        let updatePreview = app.buttons["prescription_composer_update_preview_button"]
+        clickWhenHittable(updatePreview)
+        XCTAssertTrue(stalePreviewIndicator.waitForNonExistence(timeout: 3))
     }
 }

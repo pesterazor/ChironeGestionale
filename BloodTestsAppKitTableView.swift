@@ -13,6 +13,7 @@ struct BloodTestsAppKitTableView: NSViewRepresentable {
     let onHeaderEditColumn: (UUID) -> Void
     let onHeaderAddAfterColumn: (UUID) -> Void
     let onHeaderDeleteColumn: (UUID) -> Void
+    var onUncommittedEditChange: (Bool) -> Void = { _ in }
     @Binding var selectedColumnID: UUID?
 
     func makeCoordinator() -> Coordinator {
@@ -48,6 +49,7 @@ struct BloodTestsAppKitTableView: NSViewRepresentable {
         private var renderedRowIDs: [UUID] = []
         private var isSyncingScroll = false
         private var pendingReloadAfterEditing = false
+        private weak var activeTextField: EditableTableTextField?
         private var lastDataHash: Int = 0
         private var lastSelectionSignature = ""
         private var suppressReloadUntil: Date?
@@ -164,6 +166,10 @@ struct BloodTestsAppKitTableView: NSViewRepresentable {
                 return
             }
 
+            guard !shouldDeferReloadForActiveFocus else {
+                pendingReloadAfterEditing = true
+                return
+            }
             columnStructureWasRebuilt = true
             rightTable.tableColumns.forEach { rightTable.removeTableColumn($0) }
             for column in parent.columns {
@@ -185,22 +191,34 @@ struct BloodTestsAppKitTableView: NSViewRepresentable {
         func refreshIfNeeded(force: Bool) {
             let dataHash = makeDataHash()
             let selectionSignature = parent.selectedColumnID?.uuidString ?? "nil"
-            let shouldReload = force || dataHash != lastDataHash
+            let shouldReload = force || pendingReloadAfterEditing || dataHash != lastDataHash
             let selectionChanged = selectionSignature != lastSelectionSignature
+
+            // Only acknowledge state after it has actually reached the table.
+            // Deferring must also preserve selection changes and column rebuilds.
+            if (shouldReload || selectionChanged) && shouldDeferReloadForActiveFocus {
+                pendingReloadAfterEditing = true
+                return
+            }
+            reloadStructureIfNeeded()
 
             if shouldReload {
                 let currentRowIDs = parent.rows.map(\.id)
                 let structureUnchanged = !columnStructureWasRebuilt && currentRowIDs == renderedRowIDs
 
-                if structureUnchanged && !shouldDeferReloadForActiveFocus {
+                if structureUnchanged && !selectionChanged && !shouldDeferReloadForActiveFocus {
                     // Value-only edit: reload only the rows whose cell values changed.
                     let changedRows = findChangedRowIndices()
                     if !changedRows.isEmpty {
                         let allColumns = IndexSet(0..<parent.columns.count)
                         rightTable?.reloadData(forRowIndexes: changedRows, columnIndexes: allColumns)
                     }
+                    if !changedRows.isEmpty {
+                        leftTable?.reloadData(forRowIndexes: changedRows, columnIndexes: IndexSet(integer: 0))
+                    }
                     updateLastRowHashes()
                     updateRightHeaderTitlesAndSelection()
+                    pendingReloadAfterEditing = false
                 } else {
                     reloadDataPreservingEditor()
                 }
@@ -234,6 +252,7 @@ struct BloodTestsAppKitTableView: NSViewRepresentable {
         }
 
         private var shouldDeferReloadForActiveFocus: Bool {
+            if activeTextField != nil { return true }
             if let suppressReloadUntil, Date() < suppressReloadUntil {
                 return true
             }
@@ -270,10 +289,11 @@ struct BloodTestsAppKitTableView: NSViewRepresentable {
                 h.combine(col.id)
                 h.combine(col.dateText)
             }
+            let columnKeys = parent.columns.map(\.id.uuidString)
             for row in parent.rows {
                 h.combine(row.id)
                 h.combine(row.testName)
-                for colID in parent.columns.map(\.id.uuidString) {
+                for colID in columnKeys {
                     h.combine(row.values[colID])
                 }
             }
@@ -282,6 +302,7 @@ struct BloodTestsAppKitTableView: NSViewRepresentable {
 
         private func rowValueHash(_ row: BloodTestRowRecord) -> Int {
             var h = Hasher()
+            h.combine(row.testName)
             for colID in parent.columns.map(\.id.uuidString) {
                 h.combine(row.values[colID])
             }
@@ -314,10 +335,28 @@ struct BloodTestsAppKitTableView: NSViewRepresentable {
             guard row < parent.rows.count, let tableColumn else { return nil }
             let rowModel = parent.rows[row]
 
-            let cellView = NSTableCellView()
-            cellView.wantsLayer = true
-            let textField = EditableTableTextField()
-            textField.translatesAutoresizingMaskIntoConstraints = false
+            let identifier = NSUserInterfaceItemIdentifier("bloodtests.valueCell")
+            let cellView: NSTableCellView
+            let textField: EditableTableTextField
+            if let reused = tableView.makeView(withIdentifier: identifier, owner: self) as? NSTableCellView,
+               let reusedField = reused.textField as? EditableTableTextField {
+                cellView = reused
+                textField = reusedField
+            } else {
+                cellView = NSTableCellView()
+                cellView.identifier = identifier
+                cellView.wantsLayer = true
+                textField = EditableTableTextField()
+                textField.translatesAutoresizingMaskIntoConstraints = false
+                cellView.addSubview(textField)
+                NSLayoutConstraint.activate([
+                    textField.leadingAnchor.constraint(equalTo: cellView.leadingAnchor, constant: 6),
+                    textField.trailingAnchor.constraint(equalTo: cellView.trailingAnchor, constant: -6),
+                    textField.topAnchor.constraint(equalTo: cellView.topAnchor, constant: 3),
+                    textField.bottomAnchor.constraint(equalTo: cellView.bottomAnchor, constant: -3)
+                ])
+                cellView.textField = textField
+            }
             textField.isBordered = false
             textField.focusRingType = .none
             textField.lineBreakMode = .byTruncatingTail
@@ -329,7 +368,8 @@ struct BloodTestsAppKitTableView: NSViewRepresentable {
                 textField.columnID = nil
                 textField.isEditable = false
                 textField.isSelectable = true
-                textField.stringValue = parent.rowNameForID(rowModel.id)
+                textField.stringValue = rowModel.testName
+                textField.setAccessibilityLabel("Esame: \(rowModel.testName)")
                 textField.initialValue = textField.stringValue
                 textField.didBeginEditing = false
                 cellView.layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.08).cgColor
@@ -339,7 +379,8 @@ struct BloodTestsAppKitTableView: NSViewRepresentable {
                 textField.columnID = columnID
                 textField.isEditable = true
                 textField.isSelectable = true
-                textField.stringValue = parent.cellValueForIDs(rowModel.id, columnID)
+                textField.stringValue = rowModel.values[columnID.uuidString] ?? ""
+                textField.setAccessibilityLabel("\(rowModel.testName), \(tableColumn.title)")
                 textField.initialValue = textField.stringValue
                 textField.didBeginEditing = false
                 if columnIndex >= 0 {
@@ -352,14 +393,6 @@ struct BloodTestsAppKitTableView: NSViewRepresentable {
                 }
             }
 
-            cellView.addSubview(textField)
-            NSLayoutConstraint.activate([
-                textField.leadingAnchor.constraint(equalTo: cellView.leadingAnchor, constant: 6),
-                textField.trailingAnchor.constraint(equalTo: cellView.trailingAnchor, constant: -6),
-                textField.topAnchor.constraint(equalTo: cellView.topAnchor, constant: 3),
-                textField.bottomAnchor.constraint(equalTo: cellView.bottomAnchor, constant: -3)
-            ])
-            cellView.textField = textField
             return cellView
         }
 
@@ -387,14 +420,22 @@ struct BloodTestsAppKitTableView: NSViewRepresentable {
         func controlTextDidBeginEditing(_ obj: Notification) {
             guard let textField = obj.object as? EditableTableTextField else { return }
             textField.didBeginEditing = true
+            activeTextField = textField
+        }
+
+        func controlTextDidChange(_ obj: Notification) {
+            guard let field = obj.object as? EditableTableTextField else { return }
+            parent.onUncommittedEditChange(field.stringValue != field.initialValue)
         }
 
         func controlTextDidEndEditing(_ obj: Notification) {
             guard let textField = obj.object as? EditableTableTextField, let rowID = textField.rowID else { return }
-
+            activeTextField = nil
+            defer { parent.onUncommittedEditChange(false) }
 
             // End-editing can fire even without user changes. Ignore those ghost events.
-            guard textField.didBeginEditing || textField.stringValue != textField.initialValue else {
+            guard textField.stringValue != textField.initialValue else {
+                textField.didBeginEditing = false
                 if pendingReloadAfterEditing {
                     DispatchQueue.main.async { [weak self] in
                         self?.refreshIfNeeded(force: false)
@@ -405,22 +446,20 @@ struct BloodTestsAppKitTableView: NSViewRepresentable {
 
             let value = textField.stringValue
             let columnID = textField.columnID
+            textField.initialValue = value
             textField.didBeginEditing = false
 
             // Preserve the click-to-next-cell flow: avoid immediate reload in the handoff gap.
             markRecentCellInteraction()
 
-            DispatchQueue.main.async { [weak self] in
-                guard let self else { return }
-                if let columnID {
-                    self.parent.setCellValue(rowID, columnID, value)
-                } else {
-                    self.parent.setRowName(rowID, value)
-                }
-
-                if self.pendingReloadAfterEditing {
-                    self.refreshIfNeeded(force: false)
-                }
+            // Commit before a following Save button action reads the SwiftUI draft.
+            if let columnID {
+                parent.setCellValue(rowID, columnID, value)
+            } else {
+                parent.setRowName(rowID, value)
+            }
+            if pendingReloadAfterEditing {
+                refreshIfNeeded(force: false)
             }
         }
 

@@ -2,104 +2,53 @@ import SwiftUI
 
 struct PatientClinicalDataSectionView: View {
     @Bindable var patient: Patient
-
-    private func clinicalTitle(_ text: String) -> some View {
-        Text(text)
-            .font(.caption)
-            .foregroundStyle(.secondary)
-    }
+    @State private var showingEncryptionError = false
 
     var body: some View {
-        GroupBox("Dati clinici") {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(alignment: .top, spacing: 12) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        clinicalTitle("Diagnosi principale")
-                        TextField(
-                            "",
-                            text: Binding(
-                                get: { patient.readablePrimaryDiagnosis },
-                                set: { patient.protectPrimaryDiagnosis($0) }
-                            ),
-                            prompt: Text("Diagnosi principale")
-                        )
+        ClinicalSectionBox("Dati clinici", systemImage: "stethoscope") {
+            VStack(alignment: .leading, spacing: ClinicalSpacing.m) {
+                HStack(alignment: .top, spacing: ClinicalSpacing.m) {
+                    LabeledClinicalField("Diagnosi principale") {
+                        TextField("", text: Binding(
+                            get: { patient.readablePrimaryDiagnosis },
+                            set: { if !patient.protectPrimaryDiagnosis($0) { showingEncryptionError = true } }
+                        ), prompt: Text("Diagnosi principale"))
                     }
-                    .frame(maxWidth: .infinity)
-
-                    VStack(alignment: .leading, spacing: 6) {
-                        clinicalTitle("Diagnosi secondaria")
-                        TextField(
-                            "",
-                            text: Binding(
-                                get: { patient.readableSecondaryDiagnosis },
-                                set: { patient.protectSecondaryDiagnosis($0) }
-                            ),
-                            prompt: Text("Diagnosi secondaria")
-                        )
+                    LabeledClinicalField("Diagnosi secondaria") {
+                        TextField("", text: Binding(
+                            get: { patient.readableSecondaryDiagnosis },
+                            set: { if !patient.protectSecondaryDiagnosis($0) { showingEncryptionError = true } }
+                        ), prompt: Text("Diagnosi secondaria"))
                     }
-                    .frame(maxWidth: .infinity)
                 }
 
-                HStack(alignment: .top, spacing: 12) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        clinicalTitle("Allergie")
-                        TextField(
-                            "",
-                            text: Binding(
-                                get: { patient.readableAllergies },
-                                set: { patient.protectAllergies($0) }
-                            ),
-                            prompt: Text("Allergie")
-                        )
-                    }
-                    .frame(maxWidth: .infinity)
+                LabeledClinicalField("Allergie") {
+                    TextField("", text: Binding(
+                        get: { patient.readableAllergies },
+                        set: { if !patient.protectAllergies($0) { showingEncryptionError = true } }
+                    ), prompt: Text("Allergie"))
                 }
 
-                VStack(alignment: .leading, spacing: 6) {
-                    clinicalTitle("Comorbidità mediche")
-                    ZStack(alignment: .topLeading) {
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(Color(nsColor: .textBackgroundColor))
-
-                        TextEditor(text: Binding(
-                            get: { patient.readableMedicalComorbidities },
-                            set: { patient.protectMedicalComorbidities($0) }
-                        ))
-                        .font(.body)
-                        .scrollContentBackground(.hidden)
-                        .padding(.horizontal, 4)
-                        .padding(.vertical, 6)
-                    }
-                    .frame(minHeight: 110)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8)
-                            .strokeBorder(Color.secondary.opacity(0.25))
-                    )
+                LabeledClinicalField("Comorbidità mediche") {
+                    ClinicalTextArea(text: Binding(
+                        get: { patient.readableMedicalComorbidities },
+                        set: { if !patient.protectMedicalComorbidities($0) { showingEncryptionError = true } }
+                    ))
                 }
 
-                VStack(alignment: .leading, spacing: 6) {
-                    clinicalTitle("Anamnesi psichiatrica remota")
-                    ZStack(alignment: .topLeading) {
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(Color(nsColor: .textBackgroundColor))
-
-                        TextEditor(text: Binding(
-                            get: { patient.readableRemotePsychiatricHistory },
-                            set: { patient.protectRemotePsychiatricHistory($0) }
-                        ))
-                        .font(.body)
-                        .scrollContentBackground(.hidden)
-                        .padding(.horizontal, 4)
-                        .padding(.vertical, 6)
-                    }
-                    .frame(minHeight: 110)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8)
-                            .strokeBorder(Color.secondary.opacity(0.25))
-                    )
+                LabeledClinicalField("Anamnesi psichiatrica remota") {
+                    ClinicalTextArea(text: Binding(
+                        get: { patient.readableRemotePsychiatricHistory },
+                        set: { if !patient.protectRemotePsychiatricHistory($0) { showingEncryptionError = true } }
+                    ))
                 }
             }
             .textFieldStyle(.roundedBorder)
+            .alert("Modifica non salvata", isPresented: $showingEncryptionError) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text("Non è stato possibile cifrare la modifica. Il valore precedente è stato conservato: sblocca il Portachiavi e riprova.")
+            }
             // The protect* setters write to the encrypted field and clear the plain mirror
             // synchronously. Watching only the encrypted fields (ground truth) avoids
             // a double updatedAt mutation per keystroke.

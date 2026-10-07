@@ -1,0 +1,28 @@
+{
+  "format": "chirone-backup",
+  "version": 1,
+  "createdAt": "2026-01-01T00:00:00Z",
+  "cipher": {
+    "algorithm": "AES-GCM-256",
+    "nonceBase64": "QY+q8VitKB1Gz8gc",
+    "aadBase64": "eyJjcmVhdGVkQXQiOiIyMDI2LTAxLTAxVDAwOjAwOjAwWiIsImZvcm1hdCI6ImNoaXJvbmUtYmFja3VwIiwia2RmQWxnb3JpdGhtIjoiUEJLREYyLUhNQUMtU0hBMjU2Iiwia2RmSXRlcmF0aW9ucyI6NjAwMDAwLCJzY2hlbWFWZXJzaW9uIjoyLCJ2ZXJzaW9uIjoxfQ=="
+  },
+  "kdf": {
+    "algorithm": "PBKDF2-HMAC-SHA256",
+    "saltBase64": "oQA2NpUXV1ssdlFtjC4BVA==",
+    "iterations": 600000,
+    "keyLength": 32
+  },
+  "wrappedDEKBase64": "i8kOptF6TqA8yQZVZEeo78E0RG6ZICY7/wrprFPAMANQ0sv2UUhD8Rx7tzkNlUJ1ynf6gxd+5tpwHXzj",
+  "wrappedDEKNonceBase64": "i8kOptF6TqA8yQZV",
+  "payloadBase64": "QY+q8VitKB1Gz8gcNOEIHfXcX0VjzjnEuOIfAz4AoF3xUZnsfUksE/yM5QdiYKOqLlLtLdp1VoRQGAIKumRQxGykmpZmav2TYbk3i2ujmhHt3bszv2fsh8SmMtFYAtshKa4yA7nZZtYWqEJmLn5810dXweSR256QtxTHkKnS5LPhwPUDbLSh6+Y5vMvWUwJCb82kgY2g85QEIE2OIIR2d18YCzL9i9YJ35V57fLnV4a0NQoHlHjbt06u5+cVqUDLK1FtZCh5LsLANTi5U1v8lmrd/x5BEzYXwqfJtI0IqaUI5QWdTVGwQtj5FwWbwaD7XkFdYmwLdrgXEu0Xmr8BQgmDiaWdg4iI9TefMxO2BifE2SzOCd97Yyya0BQf3w9WeJqjjD6iOLZ66DQsiWs494F8TmxX74UzIG0yjiY3g89wYYbiN9HaFcvZu2kF5K12VTNhWjPvQPudrItMHlMLxxP0J8680h/MFoA9N3HD1HXB1SDqQ3ZHoN+ZOp+kDq/LfDYY2QdMI7T1xFfJgaguay1zUQclwn7g6OS5TFyWC4hgLjpFGwZ5j/1dQk/p6XZ5r/mOEVQ/TQcqmS7gudSoywXAWquUzMGksIOeyHiheuHf0AsQQhUQmEssUvWB2QXd+xycm5Hh0u1FxUOPu7ZMFkmYVYC1AAyoBZxT08b6SEUsMVgkHrWB02XdpF88Ti30hKhMp9tgpgHvfZ+ybsXSxige0X+nRKJIe6UqxcwiG9fkyLjlLCBy4p9KRR5oJLgITmdQ2Z5PqgUC8kDafCRfMbHCjmnMrM+zOg3dU1vkMU6n0xC6u4mmMRzRdqG7",
+  "metadata": {
+    "appVersion": "fixture",
+    "schemaVersion": 2,
+    "recordCounts": {
+      "patients": 1,
+      "clinicalNotes": 0,
+      "therapyItems": 0
+    }
+  }
+}

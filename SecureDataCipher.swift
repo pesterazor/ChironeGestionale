@@ -10,17 +10,35 @@ enum SecureDataCipherError: Error {
 final class SecureDataCipher {
     static let shared = SecureDataCipher()
 
-    private let service = "it.chirone.gestionale"
-    private let account = "patient-data-symmetric-key"
+    private static let service = "it.chirone.gestionale"
+    private static let account = "patient-data-symmetric-key"
     private let keyLock = NSLock()
     private var cachedKey: SymmetricKey?
+    private let loadKeyData: @MainActor () throws -> Data?
+    private let saveKeyData: @MainActor (Data) throws -> Bool
 
-    private init() {}
+    private convenience init() {
+        #if DEBUG
+        // Unit tests encrypt only synthetic records and must never read the user's Keychain key.
+        if NSClassFromString("XCTestCase") != nil {
+            let data = SymmetricKey(size: .bits256).withUnsafeBytes { Data($0) }
+            self.init(readKeyData: { data }, storeKeyData: { _ in false })
+            return
+        }
+        #endif
+        self.init(readKeyData: { try Self.readKeyData() }, storeKeyData: { try Self.storeKeyData($0) })
+    }
+
+    // Injectable storage keeps failure-path tests independent from the user's Keychain.
+    init(readKeyData: @escaping @MainActor () throws -> Data?, storeKeyData: @escaping @MainActor (Data) throws -> Bool) {
+        loadKeyData = readKeyData
+        saveKeyData = storeKeyData
+    }
 
     // Warms the in-memory key cache immediately after biometric unlock,
     // so the first clinical field access doesn't pay the Keychain round-trip.
     func prewarmKey() {
-        _ = try? symmetricKey()
+        _ = try? symmetricKey(createIfMissing: false)
     }
 
     // Clears the cached key on app lock. The next operation will re-read
@@ -55,7 +73,8 @@ final class SecureDataCipher {
                 throw SecureDataCipherError.invalidCiphertext
             }
 
-            let key = try symmetricKey()
+            // Reading encrypted data must never create a replacement for a missing key.
+            let key = try symmetricKey(createIfMissing: false)
             let sealed = try AES.GCM.SealedBox(combined: combined)
             let decryptedData = try AES.GCM.open(sealed, using: key)
             return String(data: decryptedData, encoding: .utf8)
@@ -64,26 +83,35 @@ final class SecureDataCipher {
         }
     }
 
-    private func symmetricKey() throws -> SymmetricKey {
+    private func symmetricKey(createIfMissing: Bool = true) throws -> SymmetricKey {
         keyLock.lock()
         defer { keyLock.unlock() }
 
         if let key = cachedKey { return key }
 
         let key: SymmetricKey
-        if let existing = try readKeyData() {
+        if let existing = try loadKeyData() {
+            guard existing.count == 32 else { throw SecureDataCipherError.keyCreationFailed }
             key = SymmetricKey(data: existing)
         } else {
+            guard createIfMissing else { throw SecureDataCipherError.keyCreationFailed }
             let newKey = SymmetricKey(size: .bits256)
             let raw = newKey.withUnsafeBytes { Data($0) }
-            try storeKeyData(raw)
-            key = newKey
+            if try saveKeyData(raw) {
+                key = newKey
+            } else if let existing = try loadKeyData() {
+                // Another process may have created the shared Keychain item first.
+                guard existing.count == 32 else { throw SecureDataCipherError.keyCreationFailed }
+                key = SymmetricKey(data: existing)
+            } else {
+                throw SecureDataCipherError.keyCreationFailed
+            }
         }
         cachedKey = key
         return key
     }
 
-    private func readKeyData() throws -> Data? {
+    private static func readKeyData() throws -> Data? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -97,7 +125,10 @@ final class SecureDataCipher {
 
         switch status {
         case errSecSuccess:
-            return item as? Data
+            guard let data = item as? Data, data.count == 32 else {
+                throw SecureDataCipherError.keyCreationFailed
+            }
+            return data
         case errSecItemNotFound:
             return nil
         default:
@@ -105,7 +136,7 @@ final class SecureDataCipher {
         }
     }
 
-    private func storeKeyData(_ data: Data) throws {
+    private static func storeKeyData(_ data: Data) throws -> Bool {
         let addQuery: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword,
             kSecAttrService as String: service,
@@ -115,8 +146,10 @@ final class SecureDataCipher {
         ]
 
         let status = SecItemAdd(addQuery as CFDictionary, nil)
+        if status == errSecDuplicateItem { return false }
         guard status == errSecSuccess else {
             throw SecureDataCipherError.keyCreationFailed
         }
+        return true
     }
 }

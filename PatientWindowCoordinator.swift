@@ -2,6 +2,7 @@ import SwiftUI
 import SwiftData
 import AppKit
 import ObjectiveC
+import Combine
 
 extension Notification.Name {
     static let patientWindowCoordinatorActivePatientDidChange = Notification.Name("patientWindowCoordinatorActivePatientDidChange")
@@ -23,8 +24,17 @@ final class PatientWindowCoordinator {
     private var windows: [UUID: NSWindow] = [:]
     private var patients: [UUID: Patient] = [:]
     private var activePatientID: UUID?
+    private var lockObservation: AnyCancellable?
 
-    private init() {}
+    private init() {
+        lockObservation = AppLockViewModel.shared.$isUnlocked.sink { [weak self] unlocked in
+            guard let self else { return }
+            let permitsAccess = unlocked || AppLockViewModel.isUITestUnlockEnabled
+            for (id, window) in self.windows {
+                window.title = permitsAccess ? (self.patients[id]?.clinicalWindowTitle ?? "Cartella clinica") : "Chirone Gestionale — bloccata"
+            }
+        }
+    }
 
     private func setActivePatientID(_ newID: UUID?) {
         guard activePatientID != newID else { return }
@@ -40,12 +50,14 @@ final class PatientWindowCoordinator {
             return
         }
 
-        let contentView = PatientClinicalWindowView(patient: patient)
-            .modelContainer(modelContainer)
+        let contentView = AppLockGateView {
+            PatientClinicalWindowView(patient: patient)
+        }
+        .modelContainer(modelContainer)
 
         let hostingController = NSHostingController(rootView: contentView)
         let window = NSWindow(contentViewController: hostingController)
-        window.title = patient.clinicalWindowTitle
+        window.title = AppLockViewModel.shared.permitsClinicalAccess ? patient.clinicalWindowTitle : "Chirone Gestionale — bloccata"
         window.setContentSize(NSSize(width: 980, height: 720))
         window.minSize = NSSize(width: 820, height: 600)
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
@@ -87,6 +99,7 @@ final class PatientWindowCoordinator {
     }
 
     func activePatient() -> Patient? {
+        guard AppLockViewModel.shared.permitsClinicalAccess else { return nil }
         if activePatientID == nil,
            let keyWindow = NSApp.keyWindow,
            let match = windows.first(where: { $0.value === keyWindow }) {
@@ -101,17 +114,59 @@ final class PatientWindowCoordinator {
         return patients[match.key]
     }
 
+    var openPatientWindowCount: Int { windows.count }
+
+    var patientIDsWithUnsavedChanges: [UUID] {
+        windows.keys.filter { PatientWindowUnsavedStateStore.shared.hasUnsavedChanges(for: $0) }
+    }
+
+    // Called only after the patient-deletion confirmation has been accepted.
+    func closePatientWindow(patientID: UUID) {
+        guard let window = windows.removeValue(forKey: patientID) else { return }
+        patients.removeValue(forKey: patientID)
+        PatientWindowUnsavedStateStore.shared.clear(for: patientID)
+        AuditTrailService.shared.log(
+            .patientWindowClosed,
+            metadata: ["patient": AuditTrailService.shared.redactedIdentifier(for: patientID)]
+        )
+        window.delegate = nil
+        window.close()
+        persistOpenPatientIDs()
+        if activePatientID == patientID { setActivePatientID(nil) }
+    }
+
+    // Forced close usato dal flusso di restore: l'utente ha già confermato
+    // esplicitamente la sostituzione dei dati, quindi salta il
+    // `windowShouldClose` alert per modifiche non salvate.
+    func closeAllPatientWindows() {
+        let openWindows = windows
+        windows.removeAll()
+        patients.removeAll()
+        for (patientID, window) in openWindows {
+            PatientWindowUnsavedStateStore.shared.clear(for: patientID)
+            AuditTrailService.shared.log(
+                .patientWindowClosed,
+                metadata: ["patient": AuditTrailService.shared.redactedIdentifier(for: patientID)]
+            )
+            window.delegate = nil
+            window.close()
+        }
+        persistOpenPatientIDs()
+        setActivePatientID(nil)
+    }
+
     func restoreOpenWindows(modelContainer: ModelContainer) {
         let storedIDs = persistedOpenPatientIDs()
         guard !storedIDs.isEmpty else { return }
 
-        let context = ModelContext(modelContainer)
-        let fetchedPatients = (try? context.fetch(FetchDescriptor<Patient>())) ?? []
-        let patientByID = Dictionary(uniqueKeysWithValues: fetchedPatients.map { ($0.id, $0) })
-
+        // Restored views use the container's main context; their models must too.
+        let context = modelContainer.mainContext
         var restoredCount = 0
         for patientID in storedIDs {
-            guard windows[patientID] == nil, let patient = patientByID[patientID] else { continue }
+            guard windows[patientID] == nil else { continue }
+            var descriptor = FetchDescriptor<Patient>(predicate: #Predicate { $0.id == patientID })
+            descriptor.fetchLimit = 1
+            guard let patient = try? context.fetch(descriptor).first else { continue }
             open(patient: patient, modelContainer: modelContainer)
             restoredCount += 1
         }
@@ -173,11 +228,12 @@ private final class PatientWindowDelegate: NSObject, NSWindowDelegate {
             alert.messageText = "Chiudere senza salvare?"
             alert.informativeText = "Sono presenti modifiche non salvate nella scheda clinica. Se chiudi ora, i dati non salvati andranno persi."
             alert.alertStyle = .warning
+            alert.addButton(withTitle: "Continua a modificare")
             alert.addButton(withTitle: "Chiudi senza salvare")
-            alert.addButton(withTitle: "Annulla")
+            alert.buttons[1].hasDestructiveAction = true
 
             let response = alert.runModal()
-            return response == .alertFirstButtonReturn
+            return response == .alertSecondButtonReturn
         }
     }
 

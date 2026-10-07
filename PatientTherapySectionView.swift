@@ -202,7 +202,7 @@ struct PatientTherapySectionView: View {
     let onSave: () -> Void
 
     var body: some View {
-        GroupBox("Terapia attuale") {
+        ClinicalSectionBox("Terapia attuale", systemImage: "pills") {
             VStack(alignment: .leading, spacing: 10) {
                 ForEach($therapyDraft) { $item in
                     TherapyMedicationRow(

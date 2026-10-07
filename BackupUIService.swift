@@ -8,6 +8,9 @@ enum AuditEvent: String {
     case patientWindowOpened = "patient_window_opened"
     case patientWindowClosed = "patient_window_closed"
     case reportExported = "report_exported"
+    case reportPrinted = "report_printed"
+    case prescriptionExported = "prescription_exported"
+    case prescriptionPrinted = "prescription_printed"
     case patientDataExported = "patient_data_exported"
     case backupExported = "backup_exported"
     case backupRestored = "backup_restored"
@@ -22,6 +25,9 @@ enum AuditEvent: String {
         case .patientWindowOpened: return "Apertura cartella"
         case .patientWindowClosed: return "Chiusura cartella"
         case .reportExported: return "Export referto"
+        case .reportPrinted: return "Stampa referto"
+        case .prescriptionExported: return "Export ricetta"
+        case .prescriptionPrinted: return "Stampa ricetta"
         case .patientDataExported: return "Export dati paziente"
         case .backupExported: return "Export backup"
         case .backupRestored: return "Restore backup"
@@ -63,7 +69,16 @@ final class AuditTrailService {
         decoder.dateDecodingStrategy = .iso8601
 
         let baseDirectory: URL
-        if let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
+        #if DEBUG
+        let testDirectory = NSClassFromString("XCTestCase") != nil
+            ? fileManager.temporaryDirectory.appendingPathComponent("ChironeAuditTests-\(ProcessInfo.processInfo.processIdentifier)", isDirectory: true)
+            : nil
+        #else
+        let testDirectory: URL? = nil
+        #endif
+        if let testDirectory {
+            baseDirectory = testDirectory
+        } else if let appSupport = fileManager.urls(for: .applicationSupportDirectory, in: .userDomainMask).first {
             baseDirectory = appSupport.appendingPathComponent("ChironeGestionale", isDirectory: true)
         } else {
             baseDirectory = URL(fileURLWithPath: NSTemporaryDirectory())
@@ -271,6 +286,8 @@ struct AuditRecord: Codable {
 
 @MainActor
 final class BackupUIService {
+    // Commands can recreate their service; serialize operations across instances.
+    private static var isBackupOperationRunning = false
     private let backupFileExtension = "chdb"
     private let portabilityFileExtension = "json"
 
@@ -297,10 +314,12 @@ final class BackupUIService {
             let referringClinician: String
             let primaryDiagnosis: String
             let secondaryDiagnosis: String
+            let medicalHistory: String
             let medicalComorbidities: String
             let remotePsychiatricHistory: String
             let allergies: String
             let exemptions: String
+            let currentTherapySummary: String
             let heartFunctionStatus: String?
             let liverFunctionStatus: String?
             let kidneyFunctionStatus: String?
@@ -337,92 +356,118 @@ final class BackupUIService {
         let patient: PatientData
         let clinicalNotes: [ClinicalNoteData]
         let therapyItems: [TherapyItemData]
+        let phq9Assessments: [BackupPayload.PHQ9AssessmentRecord]
+        let gad7Assessments: [BackupPayload.GAD7AssessmentRecord]
+        let mdqAssessments: [BackupPayload.MDQAssessmentRecord]
+        let beckAssessments: [BackupPayload.BeckAssessmentRecord]
+        let madrsAssessments: [BackupPayload.MADRSAssessmentRecord]
     }
 
     func exportBackup(modelContainer: ModelContainer) {
-        guard let password = promptPassword(title: "Esporta backup cifrato", message: "Inserisci una password per proteggere il backup.", requiresConfirmation: true) else {
-            return
-        }
-
-        let panel = NSSavePanel()
-        panel.title = "Salva backup"
-        panel.nameFieldStringValue = defaultBackupFilename()
-        if let backupType = UTType(filenameExtension: backupFileExtension, conformingTo: .data) {
-            panel.allowedContentTypes = [backupType]
-        }
-        panel.canCreateDirectories = true
-
-        guard panel.runModal() == .OK, let url = panel.url else {
-            return
-        }
-
+        guard AppLockViewModel.shared.permitsClinicalAccess, !Self.isBackupOperationRunning else { return }
+        Self.isBackupOperationRunning = true
         Task {
+            defer { Self.isBackupOperationRunning = false }
+            guard AppLockViewModel.shared.permitsClinicalAccess,
+                  confirmExportWithUnsavedChanges(patientID: nil),
+                  AppLockViewModel.shared.permitsClinicalAccess,
+                  let password = promptPassword(title: "Esporta backup cifrato", message: "Inserisci una password per proteggere il backup.", requiresConfirmation: true),
+                  AppLockViewModel.shared.permitsClinicalAccess else { return }
+
+            let panel = NSSavePanel()
+            panel.title = "Salva backup"
+            panel.nameFieldStringValue = defaultBackupFilename()
+            if let backupType = UTType(filenameExtension: backupFileExtension, conformingTo: .data) {
+                panel.allowedContentTypes = [backupType]
+            }
+            panel.canCreateDirectories = true
+            guard panel.runModal() == .OK, let url = panel.url,
+                  AppLockViewModel.shared.permitsClinicalAccess else { return }
+
             let progressPanel = makeProgressPanel(message: "Backup in corso…")
+            defer { progressPanel.close() }
             do {
-                // PBKDF2 (600k iterations) + AES-GCM run on a background thread
-                // so the UI stays responsive during the operation.
-                let backupData = try await Task.detached(priority: .userInitiated) { [modelContainer] in
-                    let context = ModelContext(modelContainer)
-                    return try EncryptedBackupService.shared.exportBackup(from: context, password: password)
+                let service = EncryptedBackupService.shared
+                let payload = try service.makePayload(from: modelContainer.mainContext)
+                // SwiftData stays on its actor; PBKDF2, AES-GCM and disk I/O do not.
+                try await Task.detached(priority: .userInitiated) {
+                    let scopedAccess = url.startAccessingSecurityScopedResource()
+                    defer { if scopedAccess { url.stopAccessingSecurityScopedResource() } }
+                    let backupData = try service.encryptPayload(payload, password: password)
+                    try backupData.write(to: url, options: .atomic)
                 }.value
-                try backupData.write(to: url, options: .atomic)
                 progressPanel.close()
                 AuditTrailService.shared.log(.backupExported, metadata: ["result": "success"])
+                guard AppLockViewModel.shared.permitsClinicalAccess else { return }
                 showInfoAlert(title: "Backup completato", message: "Backup cifrato salvato con successo.")
             } catch {
                 progressPanel.close()
                 AuditTrailService.shared.log(.backupExported, metadata: ["result": "failed"])
+                guard AppLockViewModel.shared.permitsClinicalAccess else { return }
                 showErrorAlert(title: "Backup non riuscito", error: error)
             }
         }
     }
 
     func restoreBackup(modelContainer: ModelContainer) {
-        let panel = NSOpenPanel()
-        panel.title = "Seleziona backup"
-        if let backupType = UTType(filenameExtension: backupFileExtension, conformingTo: .data) {
-            panel.allowedContentTypes = [backupType]
-        }
-        panel.canChooseDirectories = false
-        panel.canChooseFiles = true
-        panel.allowsMultipleSelection = false
-
-        guard panel.runModal() == .OK, let url = panel.url else {
-            return
-        }
-
-        guard confirmRestore() else {
-            return
-        }
-
-        guard let password = promptPassword(title: "Ripristina backup", message: "Inserisci la password del backup.", requiresConfirmation: false) else {
-            return
-        }
-
+        guard AppLockViewModel.shared.permitsClinicalAccess, !Self.isBackupOperationRunning else { return }
+        Self.isBackupOperationRunning = true
         Task {
-            let progressPanel = makeProgressPanel(message: "Ripristino in corso…")
+            defer { Self.isBackupOperationRunning = false }
+            guard AppLockViewModel.shared.permitsClinicalAccess else { return }
+            let panel = NSOpenPanel()
+            panel.title = "Seleziona backup"
+            if let backupType = UTType(filenameExtension: backupFileExtension, conformingTo: .data) {
+                panel.allowedContentTypes = [backupType]
+            }
+            panel.canChooseDirectories = false
+            panel.canChooseFiles = true
+            panel.allowsMultipleSelection = false
+
+            guard panel.runModal() == .OK, let url = panel.url,
+                  AppLockViewModel.shared.permitsClinicalAccess,
+                  let password = promptPassword(title: "Ripristina backup", message: "Inserisci la password del backup.", requiresConfirmation: false),
+                  AppLockViewModel.shared.permitsClinicalAccess else { return }
+
+            let progressPanel = makeProgressPanel(message: "Verifica del backup in corso…")
+            defer { progressPanel.close() }
             do {
-                let backupData = try Data(contentsOf: url)
-                // PBKDF2 + AES-GCM decrypt + SwiftData bulk insert run off main thread.
-                try await Task.detached(priority: .userInitiated) { [modelContainer] in
-                    let context = ModelContext(modelContainer)
-                    try EncryptedBackupService.shared.restoreBackup(
-                        into: context,
-                        password: password,
-                        backupData: backupData,
-                        replaceExisting: true
-                    )
+                let service = EncryptedBackupService.shared
+                let prepared = try await Task.detached(priority: .userInitiated) {
+                    let scopedAccess = url.startAccessingSecurityScopedResource()
+                    defer { if scopedAccess { url.stopAccessingSecurityScopedResource() } }
+                    let backupData = try Data(contentsOf: url)
+                    return try service.decryptBackup(password: password, backupData: backupData)
                 }.value
+                guard AppLockViewModel.shared.permitsClinicalAccess else { return }
+                try service.validatePayload(prepared.payload)
                 progressPanel.close()
+
+                // Password and archive validation precede any discarded draft or closed window.
+                let coordinator = PatientWindowCoordinator.shared
+                guard confirmRestore(
+                    openWindowsCount: coordinator.openPatientWindowCount,
+                    unsavedWindowsCount: coordinator.patientIDsWithUnsavedChanges.count
+                ), AppLockViewModel.shared.permitsClinicalAccess else { return }
+                guard ReportPreviewWindowCoordinator.shared.confirmClosingIfNeeded(),
+                      AppLockViewModel.shared.permitsClinicalAccess,
+                      PrescriptionPreviewWindowCoordinator.shared.confirmClosingIfNeeded(),
+                      AppLockViewModel.shared.permitsClinicalAccess else { return }
+                coordinator.closeAllPatientWindows()
+                ReportPreviewWindowCoordinator.shared.closeIfPresent()
+                PrescriptionPreviewWindowCoordinator.shared.closeIfPresent()
+                try service.restorePreparedBackup(prepared, into: modelContainer.mainContext)
                 AuditTrailService.shared.log(.backupRestored, metadata: ["result": "success"])
                 showInfoAlert(title: "Ripristino completato", message: "Dati clinici ripristinati correttamente.")
             } catch EncryptedBackupError.invalidPassword {
                 progressPanel.close()
                 AuditTrailService.shared.log(.backupRestored, metadata: ["result": "failed_invalid_password"])
-                showInfoAlert(title: "Password errata", message: "La password del backup non è corretta.")
+                guard AppLockViewModel.shared.permitsClinicalAccess else { return }
+                showInfoAlert(title: "Backup non verificato", message: "La password non è corretta oppure il file di backup non è integro. Le cartelle aperte e i dati attuali sono stati conservati.")
             } catch {
                 progressPanel.close()
                 AuditTrailService.shared.log(.backupRestored, metadata: ["result": "failed"])
+                guard AppLockViewModel.shared.permitsClinicalAccess else { return }
                 showErrorAlert(title: "Ripristino non riuscito", error: error)
             }
         }
@@ -475,24 +520,27 @@ final class BackupUIService {
     }
 
     func exportPatientPortabilityData(patient: Patient) {
+        guard AppLockViewModel.shared.permitsClinicalAccess, !Self.isBackupOperationRunning else { return }
+        Self.isBackupOperationRunning = true
+        defer { Self.isBackupOperationRunning = false }
+        guard confirmExportWithUnsavedChanges(patientID: patient.id),
+              AppLockViewModel.shared.permitsClinicalAccess else { return }
+
         let panel = NSSavePanel()
         panel.title = "Esporta dati paziente"
+        panel.message = "Il file JSON contiene dati clinici in chiaro, senza password."
         panel.nameFieldStringValue = defaultPatientExportFilename(for: patient)
         if let jsonType = UTType(filenameExtension: portabilityFileExtension, conformingTo: .json) {
             panel.allowedContentTypes = [jsonType]
         }
         panel.canCreateDirectories = true
 
-        guard panel.runModal() == .OK, let url = panel.url else {
-            return
-        }
-
+        guard panel.runModal() == .OK, let url = panel.url,
+              AppLockViewModel.shared.permitsClinicalAccess else { return }
+        let scopedAccess = url.startAccessingSecurityScopedResource()
+        defer { if scopedAccess { url.stopAccessingSecurityScopedResource() } }
         do {
-            let exportPayload = makePortabilityExport(for: patient)
-            let encoder = JSONEncoder()
-            encoder.dateEncodingStrategy = .iso8601
-            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-            let data = try encoder.encode(exportPayload)
+            let data = try makePatientPortabilityData(for: patient)
             try data.write(to: url, options: .atomic)
             AuditTrailService.shared.log(
                 .patientDataExported,
@@ -504,6 +552,14 @@ final class BackupUIService {
         } catch {
             showErrorAlert(title: "Export non riuscito", error: error)
         }
+    }
+
+    func makePatientPortabilityData(for patient: Patient) throws -> Data {
+        let exportPayload = try makePortabilityExport(for: patient)
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        return try encoder.encode(exportPayload)
     }
 
     private func defaultBackupFilename() -> String {
@@ -523,23 +579,26 @@ final class BackupUIService {
         return "ChironePatientExport-\(fallback)-\(formatter.string(from: .now)).\(portabilityFileExtension)"
     }
 
-    private func makePortabilityExport(for patient: Patient) -> PatientPortabilityExport {
-        let notes = ClinicalNote.timelineSorted(patient.clinicalNotes)
-            .map {
-                PatientPortabilityExport.ClinicalNoteData(
-                    id: $0.id,
-                    content: $0.readableContent,
-                    wellbeingScore: $0.wellbeingScore,
-                    createdAt: $0.createdAt,
-                    updatedAt: $0.updatedAt
-                )
-            }
-
-        let therapy = patient.therapyItems.sorted { lhs, rhs in
-            if lhs.createdAt != rhs.createdAt { return lhs.createdAt < rhs.createdAt }
-            return lhs.id.uuidString < rhs.id.uuidString
+    private func makePortabilityExport(for patient: Patient) throws -> PatientPortabilityExport {
+        // Share the backup's complete mappings and strict decryption/validation.
+        let payload = try EncryptedBackupService.shared.makePayload(for: patient)
+        guard let record = payload.patients.first else { throw EncryptedBackupError.invalidRecordData }
+        let notes = payload.clinicalNotes.sorted {
+            if $0.createdAt != $1.createdAt { return $0.createdAt < $1.createdAt }
+            return $0.id.uuidString < $1.id.uuidString
+        }.map {
+            PatientPortabilityExport.ClinicalNoteData(
+                id: $0.id,
+                content: $0.content,
+                wellbeingScore: $0.wellbeingScore,
+                createdAt: $0.createdAt,
+                updatedAt: $0.updatedAt
+            )
         }
-        .map {
+        let therapy = payload.therapyItems.sorted {
+            if $0.createdAt != $1.createdAt { return $0.createdAt < $1.createdAt }
+            return $0.id.uuidString < $1.id.uuidString
+        }.map {
             PatientPortabilityExport.TherapyItemData(
                 id: $0.id,
                 medicationName: $0.medicationName,
@@ -550,51 +609,77 @@ final class BackupUIService {
                 updatedAt: $0.updatedAt
             )
         }
-
         let patientData = PatientPortabilityExport.PatientData(
-            id: patient.id,
+            id: record.id,
             fullName: patient.fullName,
-            firstName: patient.firstName,
-            lastName: patient.lastName,
-            dateOfBirth: patient.dateOfBirth,
-            gender: patient.gender,
-            taxCode: patient.taxCode,
-            placeOfBirth: patient.placeOfBirth,
-            birthProvince: patient.birthProvince,
-            residence: patient.residence,
-            residenceAddress: patient.residenceAddress,
-            residenceCity: patient.residenceCity,
-            residenceProvince: patient.residenceProvince,
-            phoneNumber: patient.phoneNumber,
-            emergencyContact: patient.emergencyContact,
-            generalPractitioner: patient.generalPractitioner,
-            privacyConsentSigned: patient.privacyConsentSigned,
-            referenceCSM: patient.referenceCSM,
-            referringClinician: patient.referringClinician,
-            primaryDiagnosis: patient.readablePrimaryDiagnosis,
-            secondaryDiagnosis: patient.readableSecondaryDiagnosis,
-            medicalComorbidities: patient.readableMedicalComorbidities,
-            remotePsychiatricHistory: patient.readableRemotePsychiatricHistory,
-            allergies: patient.readableAllergies,
-            exemptions: patient.exemptions,
-            heartFunctionStatus: patient.heartFunctionStatus,
-            liverFunctionStatus: patient.liverFunctionStatus,
-            kidneyFunctionStatus: patient.kidneyFunctionStatus,
-            bloodTestsTableJSON: patient.bloodTestsTableJSON,
-            createdAt: patient.createdAt,
-            updatedAt: patient.updatedAt
+            firstName: record.firstName,
+            lastName: record.lastName,
+            dateOfBirth: record.dateOfBirth,
+            gender: record.gender,
+            taxCode: record.taxCode,
+            placeOfBirth: record.placeOfBirth,
+            birthProvince: record.birthProvince,
+            residence: record.residence,
+            residenceAddress: record.residenceAddress,
+            residenceCity: record.residenceCity,
+            residenceProvince: record.residenceProvince,
+            phoneNumber: record.phoneNumber,
+            emergencyContact: record.emergencyContact,
+            generalPractitioner: record.generalPractitioner,
+            privacyConsentSigned: record.privacyConsentSigned,
+            referenceCSM: record.referenceCSM,
+            referringClinician: record.referringClinician,
+            primaryDiagnosis: record.primaryDiagnosis,
+            secondaryDiagnosis: record.secondaryDiagnosis,
+            medicalHistory: record.medicalHistory,
+            medicalComorbidities: record.medicalComorbidities ?? "",
+            remotePsychiatricHistory: record.remotePsychiatricHistory ?? "",
+            allergies: record.allergies,
+            exemptions: record.exemptions,
+            currentTherapySummary: record.currentTherapySummary,
+            heartFunctionStatus: record.heartFunctionStatus,
+            liverFunctionStatus: record.liverFunctionStatus,
+            kidneyFunctionStatus: record.kidneyFunctionStatus,
+            bloodTestsTableJSON: record.bloodTestsTableJSON,
+            createdAt: record.createdAt,
+            updatedAt: record.updatedAt
         )
-
         return PatientPortabilityExport(
             metadata: .init(
-                exportedAt: .now,
+                exportedAt: payload.exportedAt,
                 appVersion: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown",
-                schemaVersion: 1
+                schemaVersion: 2
             ),
             patient: patientData,
             clinicalNotes: notes,
-            therapyItems: therapy
+            therapyItems: therapy,
+            phq9Assessments: payload.phq9Assessments,
+            gad7Assessments: payload.gad7Assessments,
+            mdqAssessments: payload.mdqAssessments,
+            beckAssessments: payload.beckAssessments ?? [],
+            madrsAssessments: payload.madrsAssessments ?? []
         )
+    }
+
+    private func confirmExportWithUnsavedChanges(patientID: UUID?) -> Bool {
+        // Commit active field editors before inspecting the draft indicators.
+        for window in NSApp.windows { window.makeFirstResponder(nil) }
+        let hasUnsavedChanges: Bool
+        if let patientID {
+            hasUnsavedChanges = PatientWindowUnsavedStateStore.shared.hasUnsavedChanges(for: patientID)
+        } else {
+            hasUnsavedChanges = !PatientWindowCoordinator.shared.patientIDsWithUnsavedChanges.isEmpty
+        }
+        // Assessment/new-patient sheets can contain drafts that are not models yet.
+        let hasOpenSheet = NSApp.windows.contains { $0.sheetParent != nil }
+        guard hasUnsavedChanges || hasOpenSheet else { return true }
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "Esportare i dati già salvati?"
+        alert.informativeText = "Sono presenti modifiche non salvate o schede ancora aperte. Le bozze non confermate nelle schede non verranno incluse nell’esportazione. Puoi tornare alle schede per salvarle prima di continuare."
+        alert.addButton(withTitle: "Torna alle schede")
+        alert.addButton(withTitle: "Esporta dati salvati")
+        return alert.runModal() == .alertSecondButtonReturn
     }
 
     private func sanitizedUsername() -> String {
@@ -605,14 +690,26 @@ final class BackupUIService {
         return value.isEmpty ? "User" : value
     }
 
-    private func confirmRestore() -> Bool {
+    private func confirmRestore(openWindowsCount: Int, unsavedWindowsCount: Int) -> Bool {
         let alert = NSAlert()
         alert.alertStyle = .warning
         alert.messageText = "Ripristinare il backup?"
-        alert.informativeText = "I dati clinici attuali verranno sostituiti completamente."
-        alert.addButton(withTitle: "Ripristina")
+
+        var info = "I dati clinici attuali verranno sostituiti completamente."
+        if openWindowsCount > 0 {
+            let label = openWindowsCount == 1 ? "1 cartella clinica aperta verrà chiusa" : "\(openWindowsCount) cartelle cliniche aperte verranno chiuse"
+            info += "\n\n\(label) automaticamente prima del ripristino."
+        }
+        if unsavedWindowsCount > 0 {
+            let label = unsavedWindowsCount == 1 ? "1 cartella ha modifiche non salvate" : "\(unsavedWindowsCount) cartelle hanno modifiche non salvate"
+            info += "\n⚠️ \(label): le modifiche andranno perse."
+        }
+        alert.informativeText = info
+
         alert.addButton(withTitle: "Annulla")
-        return alert.runModal() == .alertFirstButtonReturn
+        alert.addButton(withTitle: "Ripristina")
+        alert.buttons[1].hasDestructiveAction = true
+        return alert.runModal() == .alertSecondButtonReturn
     }
 
     private func promptPassword(title: String, message: String, requiresConfirmation: Bool) -> String? {

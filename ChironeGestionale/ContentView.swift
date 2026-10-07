@@ -2,9 +2,39 @@ import SwiftUI
 import SwiftData
 import AppKit
 
+enum PatientSidebarQuery {
+    private static let locale = Locale(identifier: "it_IT")
+
+    static func normalized(_ value: String) -> String {
+        value.folding(options: [.caseInsensitive, .diacriticInsensitive], locale: locale)
+    }
+
+    static func results(from patients: [Patient], query: String, sortByLastVisit: Bool) -> [Patient] {
+        let words = normalized(query).split(whereSeparator: { $0.isWhitespace }).map(String.init)
+        let candidates = patients.filter { patient in
+            guard !words.isEmpty else { return true }
+            let text = normalized([patient.firstName, patient.lastName, patient.taxCode, patient.phoneNumber].joined(separator: " "))
+            return words.allSatisfy { text.contains($0) }
+        }
+        // Capture relationship-derived keys once per patient, not once per comparison.
+        return candidates.map { patient in
+            (patient: patient, title: patient.displayTitle,
+             lastVisit: sortByLastVisit ? patient.lastVisitDate : nil)
+        }.sorted { lhs, rhs in
+            if sortByLastVisit, lhs.lastVisit != rhs.lastVisit {
+                return (lhs.lastVisit ?? .distantPast) > (rhs.lastVisit ?? .distantPast)
+            }
+            let comparison = lhs.title.localizedCaseInsensitiveCompare(rhs.title)
+            return comparison == .orderedSame
+                ? lhs.patient.id.uuidString < rhs.patient.id.uuidString
+                : comparison == .orderedAscending
+        }.map(\.patient)
+    }
+}
+
 struct ContentView: View {
     private struct CommandPaletteAction: Identifiable {
-        let id = UUID()
+        var id: String { title }
         let title: String
         let subtitle: String
         let keywords: [String]
@@ -34,6 +64,9 @@ struct ContentView: View {
     @State private var searchText = ""
     @State private var selectedPatientID: UUID?
     @State private var showAddPatientSheet = false
+    @State private var patientToDelete: Patient?
+    @State private var persistenceError: String?
+    @State private var newPatientError: String?
     @State private var didAttemptWindowRestore = false
 
     @State private var newPatientFirstName = ""
@@ -136,51 +169,7 @@ struct ContentView: View {
     }
 
     private var filteredPatients: [Patient] {
-        let trimmedQuery = searchText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-
-        let baseList: [Patient]
-        if trimmedQuery.isEmpty {
-            baseList = patients
-        } else {
-            baseList = patients.filter { patient in
-                patient.searchableTokens.contains { token in
-                    token.contains(trimmedQuery)
-                }
-            }
-        }
-
-        switch sidebarSortOption {
-        case .name:
-            return baseList.sorted { lhs, rhs in
-                let compare = lhs.displayTitle.localizedCaseInsensitiveCompare(rhs.displayTitle)
-                if compare == .orderedSame {
-                    return lhs.id.uuidString < rhs.id.uuidString
-                }
-                return compare == .orderedAscending
-            }
-
-        case .lastVisit:
-            return baseList.sorted { lhs, rhs in
-                switch (lhs.lastVisitDate, rhs.lastVisitDate) {
-                case let (lDate?, rDate?):
-                    if lDate != rDate {
-                        return lDate > rDate
-                    }
-                case (_?, nil):
-                    return true
-                case (nil, _?):
-                    return false
-                case (nil, nil):
-                    break
-                }
-
-                let compare = lhs.displayTitle.localizedCaseInsensitiveCompare(rhs.displayTitle)
-                if compare == .orderedSame {
-                    return lhs.id.uuidString < rhs.id.uuidString
-                }
-                return compare == .orderedAscending
-            }
-        }
+        PatientSidebarQuery.results(from: patients, query: searchText, sortByLastVisit: sidebarSortOption == .lastVisit)
     }
 
     private var selectedPatient: Patient? {
@@ -229,14 +218,28 @@ struct ContentView: View {
             }
         }
         .sheet(isPresented: $showAddPatientSheet) {
-            addPatientSheet
+            AppLockGateView { addPatientSheet }
         }
         .sheet(isPresented: $commandPaletteState.isPresented, onDismiss: {
             commandPaletteQuery = ""
             commandPaletteOpenedAt = nil
         }) {
-            commandPaletteSheet
+            AppLockGateView { commandPaletteSheet }
         }
+        .confirmationDialog("Eliminare il paziente?", isPresented: Binding(
+            get: { patientToDelete != nil },
+            set: { if !$0 { patientToDelete = nil } }
+        ), titleVisibility: .visible, presenting: patientToDelete) { patient in
+            Button("Elimina paziente e cartella clinica", role: .destructive) { delete(patient) }
+            Button("Annulla", role: .cancel) { patientToDelete = nil }
+        } message: { patient in
+            Text("Verranno eliminati \(patient.fullName), le note, le terapie e tutte le scale associate. L’operazione non può essere annullata.")
+        }
+        .alert("Salvataggio non riuscito", isPresented: Binding(
+            get: { persistenceError != nil }, set: { if !$0 { persistenceError = nil } }
+        )) {
+            Button("OK", role: .cancel) { persistenceError = nil }
+        } message: { Text(persistenceError ?? "") }
         .onAppear {
             if ProcessInfo.processInfo.arguments.contains("-UITEST_AUTO_OPEN_NEW_PATIENT") &&
                 !didAutoOpenNewPatientSheetForUITest {
@@ -255,7 +258,7 @@ struct ContentView: View {
                 selectedPatientID = patients.first?.id
             }
         }
-        .onChange(of: patients.count) { _, _ in
+        .onChange(of: patients.map(\.id)) { _, _ in
             guard let currentSelection = selectedPatientID else {
                 selectedPatientID = patients.first?.id
                 return
@@ -335,8 +338,9 @@ struct ContentView: View {
     }
 
     private var sidebarContent: some View {
-        VStack(spacing: 0) {
-            if filteredPatients.isEmpty {
+        let visiblePatients = filteredPatients
+        return VStack(spacing: 0) {
+            if visiblePatients.isEmpty {
                 ContentUnavailableView(
                     searchText.isEmpty ? "Nessun paziente" : "Nessun risultato",
                     systemImage: searchText.isEmpty ? "person.crop.rectangle.stack" : "magnifyingglass",
@@ -345,7 +349,7 @@ struct ContentView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 List(selection: $selectedPatientID) {
-                    ForEach(filteredPatients, id: \.id) { patient in
+                    ForEach(visiblePatients, id: \.id) { patient in
                         PatientRowView(patient: patient)
                             .tag(patient.id)
                             .contentShape(Rectangle())
@@ -358,7 +362,7 @@ struct ContentView: View {
                                 Divider()
 
                                 Button(role: .destructive) {
-                                    delete(patient)
+                                    patientToDelete = patient
                                 } label: {
                                     Label("Elimina paziente", systemImage: "trash")
                                 }
@@ -372,7 +376,7 @@ struct ContentView: View {
             Divider()
 
             HStack {
-                Text("\(filteredPatients.count) pazienti")
+                Text("\(visiblePatients.count) pazienti")
                     .font(.caption)
                     .foregroundStyle(.secondary)
 
@@ -444,7 +448,7 @@ struct ContentView: View {
                 .accessibilityIdentifier("new_patient_first_name")
             TextField("Cognome *", text: $newPatientLastName)
                 .accessibilityIdentifier("new_patient_last_name")
-            DatePicker("Data di nascita *", selection: $newPatientBirthDate, displayedComponents: .date)
+            DatePicker("Data di nascita *", selection: $newPatientBirthDate, in: ...Date(), displayedComponents: .date)
             Picker("Genere", selection: $newPatientGender) {
                 Text("Maschio").tag("Maschio")
                 Text("Femmina").tag("Femmina")
@@ -526,6 +530,11 @@ struct ContentView: View {
         .textFieldStyle(.roundedBorder)
         .padding(20)
         .frame(minWidth: 420)
+        .alert("Paziente non salvato", isPresented: Binding(
+            get: { newPatientError != nil }, set: { if !$0 { newPatientError = nil } }
+        )) {
+            Button("OK", role: .cancel) { newPatientError = nil }
+        } message: { Text(newPatientError ?? "") }
         .onExitCommand {
             if showNewPatientBirthPlaceSuggestions {
                 showNewPatientBirthPlaceSuggestions = false
@@ -556,20 +565,25 @@ struct ContentView: View {
             birthProvince: birthProvince.isEmpty ? nil : birthProvince
         ) ?? ""
 
-        withAnimation {
-            let newPatient = Patient(
-                firstName: firstName,
-                lastName: lastName,
-                dateOfBirth: newPatientBirthDate,
-                gender: newPatientGender,
-                taxCode: generatedTaxCode,
-                placeOfBirth: placeOfBirth,
-                birthProvince: birthProvince.isEmpty ? nil : birthProvince,
-                createdAt: .now,
-                updatedAt: .now
-            )
-            modelContext.insert(newPatient)
+        let newPatient = Patient(
+            firstName: firstName,
+            lastName: lastName,
+            dateOfBirth: newPatientBirthDate,
+            gender: newPatientGender,
+            taxCode: generatedTaxCode,
+            placeOfBirth: placeOfBirth,
+            birthProvince: birthProvince.isEmpty ? nil : birthProvince,
+            createdAt: .now,
+            updatedAt: .now
+        )
+        modelContext.insert(newPatient)
+        do {
+            try modelContext.save()
             selectedPatientID = newPatient.id
+        } catch {
+            modelContext.delete(newPatient)
+            newPatientError = error.localizedDescription
+            return
         }
 
         resetNewPatientDraft()
@@ -618,11 +632,20 @@ struct ContentView: View {
     }
 
     private func delete(_ patient: Patient) {
-        withAnimation {
-            if selectedPatientID == patient.id {
-                selectedPatientID = nil
-            }
+        patientToDelete = nil
+        var deletionStarted = false
+        let id = patient.id
+        do {
+            // Save unrelated edits before beginning a reversible deletion transaction.
+            try modelContext.save()
+            deletionStarted = true
             modelContext.delete(patient)
+            try modelContext.save()
+            PatientWindowCoordinator.shared.closePatientWindow(patientID: id)
+            if selectedPatientID == id { selectedPatientID = nil }
+        } catch {
+            if deletionStarted { modelContext.rollback() }
+            persistenceError = error.localizedDescription
         }
     }
 

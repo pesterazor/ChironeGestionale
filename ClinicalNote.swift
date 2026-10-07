@@ -58,14 +58,28 @@ extension ClinicalNote {
         return content
     }
 
-    func protectContent(_ plaintext: String) {
-        let trimmed = plaintext.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let encrypted = SecureDataCipher.shared.encrypt(trimmed) {
-            encryptedContent = encrypted
-            content = ""
-        } else {
-            encryptedContent = nil
-            content = trimmed
+    var isAutomaticSystemUpdate: Bool {
+        let text = readableContent
+        return text.hasPrefix("Aggiornamento terapia farmacologica:") ||
+            text.hasPrefix("Richiesti esami ematochimici:") ||
+            text.hasPrefix("Presa visione esami ematochimici:")
+    }
+
+    @discardableResult
+    func protectContent(_ plaintext: String) -> Bool {
+        if let encryptedContent, !encryptedContent.isEmpty,
+           SecureDataCipher.shared.decrypt(encryptedContent) == nil {
+            return false
         }
+        let trimmed = plaintext.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else {
+            encryptedContent = nil
+            content = ""
+            return true
+        }
+        guard let encrypted = SecureDataCipher.shared.encrypt(trimmed) else { return false }
+        encryptedContent = encrypted
+        content = ""
+        return true
     }
 }

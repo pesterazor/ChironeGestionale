@@ -15,6 +15,7 @@ struct PatientClinicalWindowView: View {
     @State private var quickCaptureWellbeing = 5
     @State private var quickCaptureDate = Date()
     @State private var lastSaveFeedback: ClinicalSaveFeedback?
+    @State private var clinicalSaveError: String?
 
     private var heartStatusBinding: Binding<String> {
         Binding(
@@ -42,8 +43,12 @@ struct PatientClinicalWindowView: View {
         let comorb = (patient.medicalComorbidities ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         let psych = (patient.remotePsychiatricHistory ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
 
-        guard !legacy.isEmpty, comorb.isEmpty, psych.isEmpty else { return }
-        patient.medicalComorbidities = legacy
+        guard !legacy.isEmpty, comorb.isEmpty, psych.isEmpty,
+              patient.encryptedMedicalComorbidities == nil,
+              patient.encryptedRemotePsychiatricHistory == nil else { return }
+        if !patient.protectMedicalComorbidities(legacy) {
+            clinicalSaveError = "Non è stato possibile proteggere l’anamnesi precedente. Il testo originale è stato conservato."
+        }
     }
 
     private func draftItem(from item: TherapyMedication) -> TherapyDraftItem {
@@ -152,16 +157,16 @@ struct PatientClinicalWindowView: View {
         return "Aggiornamento terapia farmacologica:\n\(bulletList)"
     }
 
-    private func appendAutomaticClinicalNote(content: String) {
+    private func appendAutomaticClinicalNote(content: String) throws {
         let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
 
         let note = ClinicalNote(
             content: "",
-            wellbeingScore: 0,
-            patient: patient
+            wellbeingScore: 0
         )
-        note.protectContent(trimmed)
+        guard note.protectContent(trimmed) else { throw SecureDataCipherError.keyCreationFailed }
+        note.patient = patient
         modelContext.insert(note)
         patient.clinicalNotes.append(note)
     }
@@ -192,51 +197,58 @@ struct PatientClinicalWindowView: View {
     private func saveTherapyDraft() {
         guard hasUnsavedTherapyChanges else { return }
 
-        let cleanedDraft = therapyDraft.filter {
-            let medication = trim($0.medicationName)
-            let dosage = trim($0.dosage)
-            let posology = trim($0.posology)
-            return !(medication.isEmpty && dosage.isEmpty && posology.isEmpty)
-        }
+        do {
+            try ClinicalPersistence.perform(in: modelContext) {
+                let cleanedDraft = therapyDraft.filter {
+                    let medication = trim($0.medicationName)
+                    let dosage = trim($0.dosage)
+                    let posology = trim($0.posology)
+                    return !(medication.isEmpty && dosage.isEmpty && posology.isEmpty)
+                }
 
-        let existingByID = Dictionary(uniqueKeysWithValues: patient.therapyItems.map { ($0.id, $0) })
-        let keptIDs = Set(cleanedDraft.compactMap(\.sourceID))
+                let existingByID = Dictionary(uniqueKeysWithValues: patient.therapyItems.map { ($0.id, $0) })
+                let keptIDs = Set(cleanedDraft.compactMap(\.sourceID))
 
-        for existing in patient.therapyItems where !keptIDs.contains(existing.id) {
-            modelContext.delete(existing)
-        }
+                for existing in patient.therapyItems where !keptIDs.contains(existing.id) {
+                    modelContext.delete(existing)
+                }
 
-        var updatedTherapyItems: [TherapyMedication] = []
-        for draft in cleanedDraft {
-            let medication = trim(draft.medicationName)
-            let dosage = trim(draft.dosage)
-            let posology = trim(draft.posology)
+                var updatedTherapyItems: [TherapyMedication] = []
+                for draft in cleanedDraft {
+                    let medication = trim(draft.medicationName)
+                    let dosage = trim(draft.dosage)
+                    let posology = trim(draft.posology)
 
-            if let sourceID = draft.sourceID, let existing = existingByID[sourceID] {
-                existing.medicationName = medication
-                existing.dosage = dosage
-                existing.posology = posology
-                existing.isActive = true
-                existing.updatedAt = .now
-                updatedTherapyItems.append(existing)
-            } else {
-                let newItem = TherapyMedication(
-                    medicationName: medication,
-                    dosage: dosage,
-                    posology: posology,
-                    isActive: true,
-                    patient: patient
-                )
-                modelContext.insert(newItem)
-                updatedTherapyItems.append(newItem)
+                    if let sourceID = draft.sourceID, let existing = existingByID[sourceID] {
+                        existing.medicationName = medication
+                        existing.dosage = dosage
+                        existing.posology = posology
+                        existing.isActive = true
+                        existing.updatedAt = .now
+                        updatedTherapyItems.append(existing)
+                    } else {
+                        let newItem = TherapyMedication(
+                            medicationName: medication,
+                            dosage: dosage,
+                            posology: posology,
+                            isActive: true,
+                            patient: patient
+                        )
+                        modelContext.insert(newItem)
+                        updatedTherapyItems.append(newItem)
+                    }
+                }
+
+                patient.therapyItems = updatedTherapyItems
+                patient.currentTherapySummary = therapySummaryText(from: updatedTherapyItems)
+                patient.updatedAt = .now
+
+                try appendAutomaticClinicalNote(content: therapyChangeNoteText(from: updatedTherapyItems))
             }
+        } catch {
+            clinicalSaveError = "La terapia non è stata salvata. La bozza è ancora disponibile: riprova."
+            return
         }
-
-        patient.therapyItems = updatedTherapyItems
-        patient.currentTherapySummary = therapySummaryText(from: updatedTherapyItems)
-        patient.updatedAt = .now
-
-        appendAutomaticClinicalNote(content: therapyChangeNoteText(from: updatedTherapyItems))
         registerSaveFeedback(area: "Terapia")
 
         loadTherapyDraft()
@@ -258,49 +270,65 @@ struct PatientClinicalWindowView: View {
             content: "",
             wellbeingScore: quickCaptureWellbeing,
             createdAt: quickCaptureDate,
-            updatedAt: quickCaptureDate,
-            patient: patient
+            updatedAt: quickCaptureDate
         )
-        note.protectContent(trimmed)
+        guard note.protectContent(trimmed) else {
+            clinicalSaveError = "La protezione della nota non è disponibile. Riprova il salvataggio."
+            return
+        }
+        let originalUpdatedAt = patient.updatedAt
+        note.patient = patient
         modelContext.insert(note)
         patient.clinicalNotes.append(note)
         patient.updatedAt = .now
-
-        isPresentingQuickCapture = false
+        do {
+            try modelContext.save()
+            registerSaveFeedback(area: "Nota clinica")
+            isPresentingQuickCapture = false
+        } catch {
+            patient.clinicalNotes.removeAll { $0.id == note.id }
+            modelContext.delete(note)
+            patient.updatedAt = originalUpdatedAt
+            clinicalSaveError = "La bozza è ancora disponibile. Riprova il salvataggio. " + error.localizedDescription
+        }
     }
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                HStack(alignment: .top, spacing: 12) {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(patient.fullName)
-                            .font(.largeTitle)
-                            .fontWeight(.semibold)
+            VStack(alignment: .leading, spacing: ClinicalSpacing.l) {
+                // Header: patient identity + organ indicators on the same row
+                VStack(alignment: .leading, spacing: ClinicalSpacing.m) {
+                    HStack(alignment: .center, spacing: ClinicalSpacing.l) {
+                        VStack(alignment: .leading, spacing: ClinicalSpacing.xs) {
+                            Text(patient.fullName)
+                                .font(.largeTitle)
+                                .fontWeight(.semibold)
 
-                        if !patient.readablePrimaryDiagnosis.isEmpty {
-                            Label(patient.readablePrimaryDiagnosis, systemImage: "cross.case")
-                                .foregroundStyle(.secondary)
+                            if !patient.readablePrimaryDiagnosis.isEmpty {
+                                Label(patient.readablePrimaryDiagnosis, systemImage: "cross.case")
+                                    .font(.subheadline)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+
+                        Spacer(minLength: 0)
+
+                        OrganFunctionsSummaryView(
+                            heartStatus: heartStatusBinding,
+                            liverStatus: liverStatusBinding,
+                            kidneyStatus: kidneyStatusBinding
+                        ) {
+                            patient.updatedAt = .now
                         }
                     }
 
-                    Spacer(minLength: 12)
-
-                    OrganFunctionsSummaryView(
-                        heartStatus: heartStatusBinding,
-                        liverStatus: liverStatusBinding,
-                        kidneyStatus: kidneyStatusBinding
-                    ) {
-                        patient.updatedAt = .now
+                    if !openingClinicalAlerts.isEmpty {
+                        ClinicalAlertsPanelView(alerts: openingClinicalAlerts)
                     }
-                }
 
-                if !openingClinicalAlerts.isEmpty {
-                    ClinicalAlertsPanelView(alerts: openingClinicalAlerts)
-                }
-
-                if let lastSaveFeedback {
-                    ClinicalSaveFeedbackBanner(feedback: lastSaveFeedback)
+                    if let lastSaveFeedback {
+                        ClinicalSaveFeedbackBanner(feedback: lastSaveFeedback)
+                    }
                 }
 
                 PatientClinicalDataSectionView(patient: patient)
@@ -342,19 +370,23 @@ struct PatientClinicalWindowView: View {
                         hasUnsavedBloodTestsDrafts = hasUnsavedDrafts
                         updateUnsavedWindowState()
                     },
-                    onAutoClinicalUpdate: { noteText in
-                        appendAutomaticClinicalNote(content: noteText)
-                    },
                     onSaved: {
                         registerSaveFeedback(area: "Esami ematochimici")
                         refreshOpeningClinicalAlerts()
                     }
                 )
+
+                PsychometricScalesSectionView(patient: patient)
             }
-            .padding(24)
+            .padding(ClinicalSpacing.l)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .background(Color(nsColor: .windowBackgroundColor))
+        .alert("Salvataggio non riuscito", isPresented: Binding(
+            get: { clinicalSaveError != nil }, set: { if !$0 { clinicalSaveError = nil } }
+        )) {
+            Button("OK", role: .cancel) { clinicalSaveError = nil }
+        } message: { Text(clinicalSaveError ?? "") }
         .onAppear {
             hydrateLegacyAnamnesisIfNeeded()
             if patient.heartFunctionStatus == nil { patient.heartFunctionStatus = "green" }
@@ -384,30 +416,32 @@ struct PatientClinicalWindowView: View {
             PatientWindowUnsavedStateStore.shared.clear(for: patient.id)
         }
         .onReceive(NotificationCenter.default.publisher(for: .commandPaletteAddTherapyMedicationRequested)) { notification in
-            guard isNotificationForThisPatient(notification) else { return }
+            guard AppLockViewModel.shared.permitsClinicalAccess, isNotificationForThisPatient(notification) else { return }
             addTherapyMedicationRow()
         }
         .onReceive(NotificationCenter.default.publisher(for: .commandPaletteSaveTherapyRequested)) { notification in
-            guard isNotificationForThisPatient(notification) else { return }
+            guard AppLockViewModel.shared.permitsClinicalAccess, isNotificationForThisPatient(notification) else { return }
             saveTherapyDraft()
         }
         .onReceive(NotificationCenter.default.publisher(for: .quickClinicalCaptureRequested)) { notification in
-            guard isNotificationForThisPatient(notification) else { return }
+            guard AppLockViewModel.shared.permitsClinicalAccess, isNotificationForThisPatient(notification) else { return }
             openQuickClinicalCapture()
         }
         .sheet(isPresented: $isPresentingQuickCapture) {
-            QuickClinicalCaptureSheet(
-                patientFullName: patient.fullName,
-                quickCaptureText: $quickCaptureText,
-                quickCaptureDate: $quickCaptureDate,
-                quickCaptureWellbeing: $quickCaptureWellbeing,
-                onCancel: {
-                    isPresentingQuickCapture = false
-                },
-                onSave: {
-                    saveQuickClinicalCapture()
-                }
-            )
+            AppLockGateView {
+                QuickClinicalCaptureSheet(
+                    patientFullName: patient.fullName,
+                    quickCaptureText: $quickCaptureText,
+                    quickCaptureDate: $quickCaptureDate,
+                    quickCaptureWellbeing: $quickCaptureWellbeing,
+                    onCancel: {
+                        isPresentingQuickCapture = false
+                    },
+                    onSave: {
+                        saveQuickClinicalCapture()
+                    }
+                )
+            }
         }
     }
 }

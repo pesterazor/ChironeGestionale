@@ -2,12 +2,12 @@ import SwiftUI
 import SwiftData
 
 @MainActor
-private final class ClinicalDraftAutosaveStore {
+final class ClinicalDraftAutosaveStore {
     static let shared = ClinicalDraftAutosaveStore()
 
     private struct StoredDraft: Codable {
         let encryptedContent: String?
-        let plainFallbackContent: String
+        let plainFallbackContent: String?
         let wellbeing: Int
         let noteDate: Date
     }
@@ -19,32 +19,46 @@ private final class ClinicalDraftAutosaveStore {
     }
 
     private let storageKeyPrefix = "clinicalDraftAutosave.patient."
-    private let defaults = UserDefaults.standard
+    private let defaults: UserDefaults
+    private let encrypt: @MainActor (String) -> String?
+    private let decrypt: @MainActor (String?) -> String?
     private let encoder: JSONEncoder
     private let decoder: JSONDecoder
 
-    private init() {
+    init(
+        defaults: UserDefaults = .standard,
+        encrypt: @escaping @MainActor (String) -> String? = { SecureDataCipher.shared.encrypt($0) },
+        decrypt: @escaping @MainActor (String?) -> String? = { SecureDataCipher.shared.decrypt($0) }
+    ) {
+        self.defaults = defaults
+        self.encrypt = encrypt
+        self.decrypt = decrypt
         encoder = JSONEncoder()
         decoder = JSONDecoder()
         encoder.dateEncodingStrategy = .iso8601
         decoder.dateDecodingStrategy = .iso8601
     }
 
-    func saveDraft(patientID: UUID, content: String, wellbeing: Int, noteDate: Date) {
+    @discardableResult
+    func saveDraft(patientID: UUID, content: String, wellbeing: Int, noteDate: Date) -> Bool {
         let trimmed = content.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmed.isEmpty && wellbeing == 5 {
             clearDraft(patientID: patientID)
-            return
+            return true
         }
 
+        let encrypted = trimmed.isEmpty ? nil : encrypt(trimmed)
+        // Preserve the last recoverable draft if the encryption key is unavailable.
+        guard trimmed.isEmpty || encrypted != nil else { return false }
         let payload = StoredDraft(
-            encryptedContent: SecureDataCipher.shared.encrypt(trimmed),
-            plainFallbackContent: trimmed,
+            encryptedContent: encrypted,
+            plainFallbackContent: nil,
             wellbeing: min(max(wellbeing, 1), 10),
             noteDate: noteDate
         )
-        guard let data = try? encoder.encode(payload) else { return }
+        guard let data = try? encoder.encode(payload) else { return false }
         defaults.set(data, forKey: key(for: patientID))
+        return true
     }
 
     func loadDraft(patientID: UUID) -> RestoredDraft? {
@@ -56,12 +70,20 @@ private final class ClinicalDraftAutosaveStore {
 
         let content: String
         if let encrypted = decoded.encryptedContent,
-           let decrypted = SecureDataCipher.shared.decrypt(encrypted) {
+           let decrypted = decrypt(encrypted) {
             content = decrypted
+        } else if let legacyContent = decoded.plainFallbackContent {
+            content = legacyContent
+        } else if decoded.encryptedContent == nil {
+            content = ""
         } else {
-            content = decoded.plainFallbackContent
+            return nil
         }
 
+        // Migrate legacy drafts without keeping a second, unencrypted copy.
+        if decoded.plainFallbackContent != nil {
+            saveDraft(patientID: patientID, content: content, wellbeing: decoded.wellbeing, noteDate: decoded.noteDate)
+        }
         return RestoredDraft(
             content: content,
             wellbeing: min(max(decoded.wellbeing, 1), 10),
@@ -89,11 +111,39 @@ private func wellbeingColor(for score: Int) -> Color {
     }
 }
 
+@MainActor
+enum ClinicalNoteEditing {
+    static func save(
+        _ note: ClinicalNote,
+        content: String,
+        wellbeing: Int?,
+        date: Date?,
+        persist: () throws -> Void
+    ) throws {
+        let original = (note.content, note.encryptedContent, note.wellbeingScore, note.createdAt, note.updatedAt)
+        let patientUpdatedAt = note.patient?.updatedAt
+        guard note.protectContent(content) else { throw SecureDataCipherError.keyCreationFailed }
+        if let wellbeing { note.wellbeingScore = wellbeing }
+        if let date { note.createdAt = date }
+        note.updatedAt = .now
+        note.patient?.updatedAt = .now
+        do {
+            try persist()
+        } catch {
+            (note.content, note.encryptedContent, note.wellbeingScore, note.createdAt, note.updatedAt) = original
+            if let patientUpdatedAt { note.patient?.updatedAt = patientUpdatedAt }
+            throw error
+        }
+    }
+}
+
 private struct ClinicalNoteCardView: View {
+    @Environment(\.modelContext) private var modelContext
     @Bindable var note: ClinicalNote
     let onDelete: () -> Void
     let onEditingStateChange: (UUID, Bool) -> Void
     let onSaved: () -> Void
+    let canEnterEditing: Bool
 
     @State private var isEditing = false
     @State private var draftContent = ""
@@ -101,6 +151,7 @@ private struct ClinicalNoteCardView: View {
     @State private var draftDate = Date()
     @State private var shouldEditDate = false
     @State private var showDeleteConfirmation = false
+    @State private var saveError: String?
 
     @ViewBuilder
     private func actionIconButton(symbol: String, isDestructive: Bool = false, action: @escaping () -> Void) -> some View {
@@ -124,9 +175,7 @@ private struct ClinicalNoteCardView: View {
     }
 
     private var isAutomaticSystemUpdate: Bool {
-        note.readableContent.hasPrefix("Aggiornamento terapia farmacologica:") ||
-        note.readableContent.hasPrefix("Richiesti esami ematochimici:") ||
-        note.readableContent.hasPrefix("Presa visione esami ematochimici:")
+        note.isAutomaticSystemUpdate
     }
 
     private var shouldShowWellbeing: Bool {
@@ -157,17 +206,7 @@ private struct ClinicalNoteCardView: View {
 
                 actionIconButton(symbol: isEditing ? "checkmark.circle" : "pencil") {
                     if isEditing {
-                        note.protectContent(draftContent)
-                        if !isAutomaticSystemUpdate {
-                            note.wellbeingScore = draftWellbeing
-                        }
-                        if shouldEditDate {
-                            note.createdAt = draftDate
-                        }
-                        note.updatedAt = .now
-                        isEditing = false
-                        onEditingStateChange(note.id, false)
-                        onSaved()
+                        saveEdits()
                     } else {
                         draftContent = note.readableContent
                         draftWellbeing = note.wellbeingScore
@@ -178,16 +217,22 @@ private struct ClinicalNoteCardView: View {
                     }
                 }
                 .help(isEditing ? "Conferma modifica" : "Modifica nota")
+                .accessibilityLabel(isEditing ? "Conferma modifica" : "Modifica nota")
+                .disabled((!isEditing && !canEnterEditing) || (isEditing && draftContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty))
 
                 actionIconButton(symbol: "trash", isDestructive: true) {
                     showDeleteConfirmation = true
                 }
+                .accessibilityLabel("Elimina nota")
+                .disabled(!canEnterEditing && !isEditing)
                 .confirmationDialog(
                     "Eliminare questo aggiornamento clinico?",
                     isPresented: $showDeleteConfirmation,
                     titleVisibility: .visible
                 ) {
                     Button("Elimina", role: .destructive) {
+                        isEditing = false
+                        onEditingStateChange(note.id, false)
                         onDelete()
                     }
                     Button("Annulla", role: .cancel) { }
@@ -250,23 +295,15 @@ private struct ClinicalNoteCardView: View {
                         }
 
                         Button("Salva") {
-                            note.protectContent(draftContent)
-                            if !isAutomaticSystemUpdate {
-                                note.wellbeingScore = draftWellbeing
-                            }
-                            if shouldEditDate {
-                                note.createdAt = draftDate
-                            }
-                            note.updatedAt = .now
-                            isEditing = false
-                            onEditingStateChange(note.id, false)
-                            onSaved()
+                            saveEdits()
                         }
                         .buttonStyle(.borderedProminent)
+                        .disabled(draftContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                     }
                 }
             } else {
-                Text(note.readableContent.isEmpty ? "Nessun contenuto" : note.readableContent)
+                let content = note.readableContent
+                Text(content.isEmpty ? "Nessun contenuto" : content)
                     .textSelection(.enabled)
                     .font(.body)
                     .frame(maxWidth: .infinity, alignment: .leading)
@@ -287,6 +324,26 @@ private struct ClinicalNoteCardView: View {
                 .strokeBorder(Color.secondary.opacity(0.18))
         )
         .padding(.vertical, 2)
+        .alert("Impossibile salvare la nota", isPresented: Binding(
+            get: { saveError != nil }, set: { if !$0 { saveError = nil } }
+        )) {
+            Button("OK", role: .cancel) { saveError = nil }
+        } message: { Text(saveError ?? "") }
+    }
+
+    private func saveEdits() {
+        do {
+            try ClinicalNoteEditing.save(note, content: draftContent,
+                wellbeing: isAutomaticSystemUpdate ? nil : draftWellbeing,
+                date: shouldEditDate ? draftDate : nil) {
+                try modelContext.save()
+            }
+            isEditing = false
+            onEditingStateChange(note.id, false)
+            onSaved()
+        } catch {
+            saveError = "La modifica è ancora disponibile. Riprova il salvataggio. " + error.localizedDescription
+        }
     }
 }
 
@@ -328,6 +385,7 @@ private struct NewClinicalNoteComposerView: View {
     @Binding var wellbeing: Int
     @Binding var noteDate: Date
     let onSave: () -> Void
+    var canSave = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -391,7 +449,7 @@ private struct NewClinicalNoteComposerView: View {
             .keyboardShortcut("s", modifiers: [.command, .shift])
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
-            .disabled(content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            .disabled(!canSave || content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         }
     }
 }
@@ -407,6 +465,7 @@ private struct ClinicalTimelineView: View {
     let onDelete: (ClinicalNote) -> Void
     let onEditingStateChange: (UUID, Bool) -> Void
     let onNoteSaved: () -> Void
+    let editingNoteIDs: Set<UUID>
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -445,13 +504,13 @@ private struct ClinicalTimelineView: View {
             } else {
                 LazyVStack(alignment: .leading, spacing: 10) {
                     ForEach(notes) { note in
-                        ClinicalNoteCardView(note: note) {
-                            onDelete(note)
-                        } onEditingStateChange: { noteID, isEditing in
-                            onEditingStateChange(noteID, isEditing)
-                        } onSaved: {
-                            onNoteSaved()
-                        }
+                        ClinicalNoteCardView(
+                            note: note,
+                            onDelete: { onDelete(note) },
+                            onEditingStateChange: onEditingStateChange,
+                            onSaved: onNoteSaved,
+                            canEnterEditing: editingNoteIDs.isEmpty || editingNoteIDs.contains(note.id)
+                        )
                     }
                 }
             }
@@ -484,6 +543,8 @@ struct ClinicalUpdatesSectionView: View {
     @State private var autosaveTask: Task<Void, Never>?
     @State private var lastAutosaveSignature = ""
     @State private var lastAutosavedSnapshot: DraftSnapshot?
+    @State private var saveError: String?
+    @State private var autosaveFailed = false
 
     let onDraftStateChange: (Bool) -> Void
     let onSaved: (() -> Void)?
@@ -499,9 +560,9 @@ struct ClinicalUpdatesSectionView: View {
     }
 
     private let notesPageSize = 5
-    private let autosaveDebounceNanoseconds: UInt64 = 10_000_000_000
+    private let autosaveDebounceNanoseconds: UInt64 = 2_000_000_000
 
-    private struct DraftSnapshot {
+    private struct DraftSnapshot: Equatable {
         let content: String
         let wellbeing: Int
         let noteDate: Date
@@ -511,11 +572,11 @@ struct ClinicalUpdatesSectionView: View {
     }
 
     private var canGoToOlderNotesPage: Bool {
-        notesPageOffset + notesPageSize < totalNotesCount
+        editingNoteIDs.isEmpty && notesPageOffset + notesPageSize < totalNotesCount
     }
 
     private var canGoToNewerNotesPage: Bool {
-        notesPageOffset > 0
+        editingNoteIDs.isEmpty && notesPageOffset > 0
     }
 
     private var currentRangeText: String {
@@ -574,19 +635,32 @@ struct ClinicalUpdatesSectionView: View {
     }
 
     private func saveNewNote() {
-        guard !newNoteContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        guard editingNoteIDs.isEmpty, !newNoteContent.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        let originalUpdatedAt = patient.updatedAt
         let timestamp = newNoteDate
         let note = ClinicalNote(
             content: "",
             wellbeingScore: newNoteWellbeing,
             createdAt: timestamp,
-            updatedAt: timestamp,
-            patient: patient
+            updatedAt: timestamp
         )
-        note.protectContent(newNoteContent.trimmingCharacters(in: .whitespacesAndNewlines))
+        guard note.protectContent(newNoteContent.trimmingCharacters(in: .whitespacesAndNewlines)) else {
+            saveError = "La protezione della nota non è disponibile. La bozza è conservata: riprova il salvataggio."
+            return
+        }
+        note.patient = patient
         modelContext.insert(note)
         patient.clinicalNotes.append(note)
         patient.updatedAt = .now
+        do {
+            try modelContext.save()
+        } catch {
+            patient.clinicalNotes.removeAll { $0.id == note.id }
+            modelContext.delete(note)
+            patient.updatedAt = originalUpdatedAt
+            saveError = "La bozza è ancora disponibile. Riprova il salvataggio. " + error.localizedDescription
+            return
+        }
         newNoteContent = ""
         newNoteWellbeing = 5
         newNoteDate = .now
@@ -633,13 +707,15 @@ struct ClinicalUpdatesSectionView: View {
             wellbeing: newNoteWellbeing,
             noteDate: newNoteDate
         )
-        guard isSignificantDraftChange(from: lastAutosavedSnapshot, to: currentSnapshot) else { return }
-        ClinicalDraftAutosaveStore.shared.saveDraft(
+        guard currentSnapshot != lastAutosavedSnapshot else { return }
+        let didSave = ClinicalDraftAutosaveStore.shared.saveDraft(
             patientID: patient.id,
             content: newNoteContent,
             wellbeing: newNoteWellbeing,
             noteDate: newNoteDate
         )
+        autosaveFailed = !didSave
+        guard didSave else { return }
         lastAutosaveSignature = signature
         lastAutosavedSnapshot = currentSnapshot
     }
@@ -651,31 +727,6 @@ struct ClinicalUpdatesSectionView: View {
             guard !Task.isCancelled else { return }
             autosaveDraftNow()
         }
-    }
-
-    private func isSignificantDraftChange(from previous: DraftSnapshot?, to current: DraftSnapshot) -> Bool {
-        guard let previous else {
-            return !current.content.isEmpty
-        }
-
-        if previous.wellbeing != current.wellbeing {
-            return true
-        }
-
-        if abs(current.noteDate.timeIntervalSince(previous.noteDate)) >= 60 {
-            return true
-        }
-
-        if previous.content.isEmpty != current.content.isEmpty {
-            return true
-        }
-
-        let lengthDelta = abs(current.content.count - previous.content.count)
-        if lengthDelta >= 20 {
-            return true
-        }
-
-        return false
     }
 
     private func isNotificationForThisPatient(_ notification: Notification) -> Bool {
@@ -708,7 +759,7 @@ struct ClinicalUpdatesSectionView: View {
     }
 
     var body: some View {
-        GroupBox("Aggiornamenti clinici") {
+        ClinicalSectionBox("Aggiornamenti clinici", systemImage: "note.text") {
             VStack(alignment: .leading, spacing: 14) {
                 if didRestoreDraft {
                     Label("Bozza recuperata automaticamente", systemImage: "clock.arrow.trianglehead.counterclockwise.rotate.90")
@@ -720,8 +771,20 @@ struct ClinicalUpdatesSectionView: View {
                     content: $newNoteContent,
                     wellbeing: $newNoteWellbeing,
                     noteDate: $newNoteDate,
-                    onSave: saveNewNote
+                    onSave: saveNewNote,
+                    canSave: editingNoteIDs.isEmpty
                 )
+
+                if !editingNoteIDs.isEmpty {
+                    Text("Salva o annulla la nota in modifica prima di cambiare pagina o aggiungerne una nuova.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                if autosaveFailed {
+                    Label("Recupero automatico della bozza non disponibile: mantieni aperta la scheda e salva la nota.", systemImage: "exclamationmark.triangle")
+                        .font(.caption)
+                        .foregroundStyle(.orange)
+                }
 
                 ClinicalTimelineView(
                     notes: timelineNotes,
@@ -737,16 +800,23 @@ struct ClinicalUpdatesSectionView: View {
                             editingNoteIDs.insert(noteID)
                         } else {
                             editingNoteIDs.remove(noteID)
+                            if editingNoteIDs.isEmpty { refreshTimelineNotes() }
                         }
                         onDraftStateChange(hasUnsavedDrafts)
                     },
                     onNoteSaved: {
-                        refreshTimelineNotes()
-                    }
+                        if editingNoteIDs.isEmpty { refreshTimelineNotes() }
+                    },
+                    editingNoteIDs: editingNoteIDs
                 )
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .alert("Impossibile salvare la nota", isPresented: Binding(
+            get: { saveError != nil }, set: { if !$0 { saveError = nil } }
+        )) {
+            Button("OK", role: .cancel) { saveError = nil }
+        } message: { Text(saveError ?? "") }
         .onAppear {
             notesPageOffset = 0
             editingNoteIDs.removeAll()
@@ -772,6 +842,7 @@ struct ClinicalUpdatesSectionView: View {
             onDraftStateChange(hasUnsavedDrafts)
         }
         .onChange(of: patient.clinicalNotes.count) { _, _ in
+            guard editingNoteIDs.isEmpty else { return }
             notesPageOffset = 0
             refreshTimelineNotes()
             onDraftStateChange(hasUnsavedDrafts)
@@ -795,7 +866,7 @@ struct ClinicalUpdatesSectionView: View {
             onDraftStateChange(false)
         }
         .onReceive(NotificationCenter.default.publisher(for: .commandPaletteSaveClinicalNoteRequested)) { notification in
-            guard isNotificationForThisPatient(notification) else { return }
+            guard AppLockViewModel.shared.permitsClinicalAccess, isNotificationForThisPatient(notification) else { return }
             saveNewNote()
         }
     }

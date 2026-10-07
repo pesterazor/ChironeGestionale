@@ -1,21 +1,61 @@
 import SwiftUI
 import Foundation
+import SwiftData
+import AppKit
+
+@MainActor
+enum BloodTestsPersistence {
+    static func save(
+        _ payload: BloodTestsTablePayload,
+        replacing previous: BloodTestsTablePayload,
+        for patient: Patient,
+        in context: ModelContext,
+        persist: () throws -> Void
+    ) throws {
+        let encoded = BloodTestsSectionViewModel.encodePayload(payload)
+        guard !encoded.isEmpty else { throw CocoaError(.coderInvalidValue) }
+        let originalJSON = patient.bloodTestsTableJSON
+        let originalUpdatedAt = patient.updatedAt
+        var automaticNote: ClinicalNote?
+        if let content = BloodTestsSectionViewModel.bloodTestsRequestNoteText(from: previous, to: payload) {
+            let note = ClinicalNote(wellbeingScore: 0)
+            guard note.protectContent(content) else { throw SecureDataCipherError.keyCreationFailed }
+            automaticNote = note
+        }
+        patient.bloodTestsTableJSON = encoded
+        patient.updatedAt = .now
+        if let note = automaticNote {
+            note.patient = patient
+            context.insert(note)
+            patient.clinicalNotes.append(note)
+        }
+        do {
+            try persist()
+        } catch {
+            patient.bloodTestsTableJSON = originalJSON
+            patient.updatedAt = originalUpdatedAt
+            if let note = automaticNote {
+                patient.clinicalNotes.removeAll { $0.id == note.id }
+                context.delete(note)
+            }
+            throw error
+        }
+    }
+}
 
 struct BloodTestsSectionView: View {
+    @Environment(\.modelContext) private var modelContext
     @Bindable var patient: Patient
     let onDraftStateChange: (Bool) -> Void
-    let onAutoClinicalUpdate: ((String) -> Void)?
     let onSaved: (() -> Void)?
 
     init(
         patient: Patient,
         onDraftStateChange: @escaping (Bool) -> Void,
-        onAutoClinicalUpdate: ((String) -> Void)? = nil,
         onSaved: (() -> Void)? = nil
     ) {
         self.patient = patient
         self.onDraftStateChange = onDraftStateChange
-        self.onAutoClinicalUpdate = onAutoClinicalUpdate
         self.onSaved = onSaved
     }
 
@@ -32,10 +72,12 @@ struct BloodTestsSectionView: View {
     @State private var cachedSortedColumns: [BloodTestColumnRecord] = []
     @State private var cachedSortedRows: [BloodTestRowRecord] = []
     @State private var lastRowsStructureKey: [UUID: String] = [:]
+    @State private var saveError: String?
+    @State private var hasUncommittedCellChanges = false
     @FocusState private var isNewExamNameFocused: Bool
 
     private var hasUnsavedChanges: Bool {
-        draft != persistedDraft
+        draft != persistedDraft || hasUncommittedCellChanges
     }
 
     private func isNotificationForThisPatient(_ notification: Notification) -> Bool {
@@ -50,9 +92,13 @@ struct BloodTestsSectionView: View {
     }
 
     private func computeSortedColumns(from columns: [BloodTestColumnRecord]) -> [BloodTestColumnRecord] {
-        columns.sorted { lhs, rhs in
-            let leftDate = BloodTestsSectionViewModel.parsedDate(from: lhs.dateText)
-            let rightDate = BloodTestsSectionViewModel.parsedDate(from: rhs.dateText)
+        // Date parsing is considerably costlier than comparing the resulting dates.
+        let datesByID = Dictionary(uniqueKeysWithValues: columns.map {
+            ($0.id, BloodTestsSectionViewModel.parsedDate(from: $0.dateText))
+        })
+        return columns.sorted { lhs, rhs in
+            let leftDate = datesByID[lhs.id] ?? nil
+            let rightDate = datesByID[rhs.id] ?? nil
             switch (leftDate, rightDate) {
             case let (l?, r?):
                 if l != r {
@@ -100,11 +146,11 @@ struct BloodTestsSectionView: View {
     }
 
     var body: some View {
-        GroupBox("Esami ematochimici") {
+        ClinicalSectionBox("Esami ematochimici", systemImage: "drop.circle") {
             VStack(alignment: .leading, spacing: 12) {
                 topControls
                     .popover(isPresented: $isPresentingEditColumnPopover, arrowEdge: .bottom) {
-                        editColumnPopoverContent
+                        AppLockGateView { editColumnPopoverContent }
                     }
 
                 tableContainer
@@ -113,6 +159,11 @@ struct BloodTestsSectionView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .alert("Esami non salvati", isPresented: Binding(
+            get: { saveError != nil }, set: { if !$0 { saveError = nil } }
+        )) {
+            Button("OK", role: .cancel) { saveError = nil }
+        } message: { Text(saveError ?? "") }
         .onAppear {
             guard !didLoad else { return }
             didLoad = true
@@ -154,7 +205,7 @@ struct BloodTestsSectionView: View {
             onDraftStateChange(false)
         }
         .onReceive(NotificationCenter.default.publisher(for: .commandPaletteSaveBloodTestsRequested)) { notification in
-            guard isNotificationForThisPatient(notification) else { return }
+            guard AppLockViewModel.shared.permitsClinicalAccess, isNotificationForThisPatient(notification) else { return }
             saveDraft()
         }
     }
@@ -235,6 +286,7 @@ private extension BloodTestsSectionView {
             onHeaderEditColumn: handleHeaderEditColumn,
             onHeaderAddAfterColumn: handleHeaderAddAfterColumn,
             onHeaderDeleteColumn: handleHeaderDeleteColumn,
+            onUncommittedEditChange: { hasUncommittedCellChanges = $0 },
             selectedColumnID: $selectedColumnID
         )
         .accessibilityIdentifier("bloodtests_table")
@@ -363,19 +415,22 @@ private extension BloodTestsSectionView {
     }
 
     func saveDraft() {
-        let previous = persistedDraft
+        // Finish the active AppKit cell before reading the draft, including keyboard saves.
+        if let window = NSApp.keyWindow, !window.makeFirstResponder(nil) { return }
+        guard hasUnsavedChanges else { return }
         recalculateDerivedValuesForAllColumns()
         let normalized = BloodTestsSectionViewModel.normalizePayload(draft)
-        draft = normalized
-        persistedDraft = normalized
-        patient.bloodTestsTableJSON = BloodTestsSectionViewModel.encodePayload(normalized)
-        patient.updatedAt = .now
-        refreshSortedCaches()
-
-        if let noteText = BloodTestsSectionViewModel.bloodTestsRequestNoteText(from: previous, to: normalized) {
-            onAutoClinicalUpdate?(noteText)
+        do {
+            try BloodTestsPersistence.save(normalized, replacing: persistedDraft, for: patient, in: modelContext) {
+                try modelContext.save()
+            }
+            draft = normalized
+            persistedDraft = normalized
+            refreshSortedCaches()
+            onSaved?()
+        } catch {
+            saveError = "Le modifiche restano nella tabella. Riprova il salvataggio. " + error.localizedDescription
         }
-        onSaved?()
     }
 
     func dateText(from date: Date) -> String {

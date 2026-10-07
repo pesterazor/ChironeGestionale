@@ -1,30 +1,26 @@
 import Foundation
 
-struct ActiveIngredientAutocomplete {
+nonisolated struct ActiveIngredientAutocomplete: Sendable {
     static let shared = ActiveIngredientAutocomplete()
 
-    private let ingredients: [String]
     private let normalizedByIngredient: [String: String]
     private let ingredientByNormalized: [String: String]
     private let prefixIndex: [String: [String]]
     private let normalizedFormsByIngredient: [String: [(raw: String, normalized: String)]]
 
     private init() {
-        guard
-            let url = Bundle.main.url(forResource: "active_ingredients_it", withExtension: "json"),
-            let data = try? Data(contentsOf: url),
-            let decoded = try? JSONDecoder().decode([String].self, from: data)
-        else {
-            ingredients = []
-            normalizedByIngredient = [:]
-            ingredientByNormalized = [:]
-            prefixIndex = [:]
-            normalizedFormsByIngredient = [:]
-            return
+        let decoded: [String]
+        if let url = Bundle.main.url(forResource: "active_ingredients_it", withExtension: "json"),
+           let data = try? Data(contentsOf: url),
+           let values = try? JSONDecoder().decode([String].self, from: data) {
+            decoded = values
+        } else {
+            decoded = []
         }
+        self.init(ingredients: decoded, forms: Self.loadForms())
+    }
 
-        ingredients = decoded
-
+    init(ingredients decoded: [String], forms: [String: [String]]) {
         var normalized: [String: String] = [:]
         normalized.reserveCapacity(decoded.count)
         var reverseNormalized: [String: String] = [:]
@@ -45,11 +41,14 @@ struct ActiveIngredientAutocomplete {
             }
         }
 
-        let forms = Self.loadForms()
         var normalizedForms: [String: [(raw: String, normalized: String)]] = [:]
         normalizedForms.reserveCapacity(forms.count)
         for (ingredient, values) in forms {
-            normalizedForms[ingredient] = values.map { ($0, Self.normalized($0)) }
+            // Parsing each dosage once avoids repeated regex work in the sort comparator.
+            normalizedForms[ingredient] = values
+                .map { (raw: $0, key: Self.dosageSortKey($0)) }
+                .sorted { $0.key < $1.key }
+                .map { ($0.raw, Self.normalized($0.raw)) }
         }
 
         normalizedByIngredient = normalized
@@ -60,11 +59,11 @@ struct ActiveIngredientAutocomplete {
 
     func suggestions(for query: String, limit: Int = 12) -> [String] {
         let normalizedQuery = Self.normalized(query)
-        guard normalizedQuery.count >= 2 else { return [] }
+        guard limit > 0, normalizedQuery.count >= 2 else { return [] }
 
         let prefixLength = min(3, normalizedQuery.count)
         let prefix = String(normalizedQuery.prefix(prefixLength))
-        let candidates = prefixIndex[prefix] ?? ingredients
+        guard let candidates = prefixIndex[prefix] else { return [] }
 
         var results: [String] = []
         results.reserveCapacity(min(limit, candidates.count))
@@ -86,6 +85,7 @@ struct ActiveIngredientAutocomplete {
         formulationQuery: String,
         limit: Int = 12
     ) -> [String] {
+        guard limit > 0 else { return [] }
         let normalizedIngredient = Self.normalized(ingredientQuery)
         let normalizedFormulation = Self.normalized(formulationQuery)
 
@@ -130,23 +130,17 @@ struct ActiveIngredientAutocomplete {
             return [:]
         }
 
-        var sortedForms: [String: [String]] = [:]
-        sortedForms.reserveCapacity(decoded.count)
-
-        for (ingredient, values) in decoded {
-            sortedForms[ingredient] = values.sorted { lhs, rhs in
-                dosageSortKey(lhs) < dosageSortKey(rhs)
-            }
-        }
-
-        return sortedForms
+        return decoded
     }
 
+    private static let dosageRegex = try! NSRegularExpression(
+        pattern: #"(\d+(?:[.,]\d+)?)\s*(MCG/ML|MICROG/ML|MG/ML|G/ML|MG/G|MICROG|MCG|MMOL|MEQ|MUI|MG|UI|G|%)"#,
+        options: [.caseInsensitive]
+    )
+
     private static func dosageSortKey(_ formulation: String) -> (hasDose: Int, dose: Double, unit: Int, fallback: String) {
-        let pattern = #"(\d+(?:[.,]\d+)?)\s*(MCG|MICROG|MG|G|UI|MUI|MEQ|MMOL|MG/ML|MCG/ML|G/ML|MG/G|%)"#
         guard
-            let regex = try? NSRegularExpression(pattern: pattern, options: [.caseInsensitive]),
-            let match = regex.firstMatch(
+            let match = dosageRegex.firstMatch(
                 in: formulation,
                 options: [],
                 range: NSRange(formulation.startIndex..<formulation.endIndex, in: formulation)

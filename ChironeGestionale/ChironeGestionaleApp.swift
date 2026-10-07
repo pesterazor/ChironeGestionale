@@ -72,6 +72,7 @@ private struct PreferencesView: View {
     @AppStorage("security.reauthTimeoutMinutes") private var reauthTimeoutMinutes = 5
     @AppStorage("report.doctorFullName") private var doctorFullName = ""
     @AppStorage("report.doctorQualification") private var doctorQualification = ""
+    @AppStorage("report.doctorRegistration") private var doctorRegistration = ""
     @AppStorage("report.doctorAddress") private var doctorAddress = ""
     @AppStorage("report.doctorPhoneEmail") private var doctorPhoneEmail = ""
     @AppStorage("report.notesInReport") private var reportNotesInReport = 3
@@ -120,7 +121,8 @@ private struct PreferencesView: View {
     }
 
     var body: some View {
-        ScrollView(.vertical) {
+        let stats = commandPaletteStats
+        return ScrollView(.vertical) {
             VStack(alignment: .leading, spacing: 18) {
                 Text("Preferenze")
                     .font(.title2.weight(.semibold))
@@ -129,11 +131,12 @@ private struct PreferencesView: View {
                     VStack(alignment: .leading, spacing: 10) {
                         TextField("Nome e cognome medico", text: $doctorFullName, prompt: Text("Dr.ssa/Dr. Nome Cognome"))
                         TextField("Qualifica", text: $doctorQualification, prompt: Text("Medico Chirurgo - Specialista in Psichiatria"))
+                        TextField("Iscrizione all'albo", text: $doctorRegistration, prompt: Text("Ordine dei Medici di… n. …"))
                         TextField("Indirizzo studio", text: $doctorAddress, prompt: Text("Via..., CAP Città (Prov.)"))
                         TextField("Contatti", text: $doctorPhoneEmail, prompt: Text("Telefono - Email/PEC"))
 
                         HStack {
-                            Text("Numero note nel referto")
+                            Text("Numero massimo note recenti (se incluse)")
                             Spacer()
                             Stepper(value: $reportNotesInReport, in: 2...5) {
                                 Text("\(reportNotesInReport)")
@@ -199,7 +202,7 @@ private struct PreferencesView: View {
                             HStack {
                                 Text("Esecuzioni totali")
                                 Spacer()
-                                Text("\(commandPaletteStats.totalExecutions)")
+                                Text("\(stats.totalExecutions)")
                                     .font(.headline)
                                     .monospacedDigit()
                             }
@@ -207,7 +210,7 @@ private struct PreferencesView: View {
                             HStack {
                                 Text("Latenza mediana open→execute")
                                 Spacer()
-                                Text(commandPaletteStats.medianLatencyMs.map { "\($0) ms" } ?? "N/D")
+                                Text(stats.medianLatencyMs.map { "\($0) ms" } ?? "N/D")
                                     .font(.headline)
                                     .monospacedDigit()
                             }
@@ -218,12 +221,12 @@ private struct PreferencesView: View {
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
 
-                            if commandPaletteStats.topActions.isEmpty {
+                            if stats.topActions.isEmpty {
                                 Text("Nessuna azione registrata nel periodo.")
                                     .font(.caption)
                                     .foregroundStyle(.secondary)
                             } else {
-                                ForEach(Array(commandPaletteStats.topActions.enumerated()), id: \.offset) { index, item in
+                                ForEach(Array(stats.topActions.enumerated()), id: \.offset) { index, item in
                                     HStack(spacing: 8) {
                                         Text("\(index + 1).")
                                             .font(.caption.monospacedDigit())
@@ -248,6 +251,9 @@ private struct PreferencesView: View {
                                 AuditEvent.patientWindowOpened,
                                 AuditEvent.patientWindowClosed,
                                 AuditEvent.reportExported,
+                                AuditEvent.reportPrinted,
+                                AuditEvent.prescriptionExported,
+                                AuditEvent.prescriptionPrinted,
                                 AuditEvent.patientDataExported,
                                 AuditEvent.backupExported,
                                 AuditEvent.backupRestored,
@@ -391,12 +397,81 @@ private struct PreferencesView: View {
     }
 }
 
+@MainActor
+final class ModelStoreState: ObservableObject {
+    @Published private(set) var container: ModelContainer?
+    @Published private(set) var errorDescription: String?
+    private let makeContainer: @MainActor () throws -> ModelContainer
+
+    init(makeContainer: @escaping @MainActor () throws -> ModelContainer = ModelStoreState.makeDefaultContainer) {
+        self.makeContainer = makeContainer
+        retry()
+    }
+
+    func retry() {
+        do {
+            container = try makeContainer()
+            errorDescription = nil
+        } catch {
+            container = nil
+            errorDescription = error.localizedDescription
+        }
+    }
+
+    static func makeDefaultContainer() throws -> ModelContainer {
+        let schema = Schema([
+            Patient.self, ClinicalNote.self, TherapyMedication.self,
+            PHQ9Assessment.self, GAD7Assessment.self, MDQAssessment.self,
+            BeckAssessment.self, MADRSAssessment.self
+        ])
+        #if DEBUG
+        let inMemory = NSClassFromString("XCTestCase") != nil ||
+            ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil ||
+            ProcessInfo.processInfo.arguments.contains("-UITEST_IN_MEMORY_STORE")
+        #else
+        let inMemory = false
+        #endif
+        let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: inMemory)
+        return try ModelContainer(for: schema, configurations: [configuration])
+    }
+}
+
+private struct StoreUnavailableView: View {
+    @ObservedObject var store: ModelStoreState
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Label("Impossibile aprire l’archivio", systemImage: "externaldrive.badge.exclamationmark")
+                .font(.title2.weight(.semibold))
+            Text("L’archivio non è disponibile. Le schede cliniche resteranno chiuse finché l’apertura non riesce. Puoi riprovare o chiudere Chirone.")
+            if let error = store.errorDescription {
+                DisclosureGroup("Dettagli dell’errore") {
+                    Text(error).font(.caption).textSelection(.enabled)
+                }
+            }
+            HStack {
+                Button("Chiudi Chirone") { NSApp.terminate(nil) }
+                Spacer()
+                Button("Riprova") { store.retry() }
+                    .buttonStyle(.borderedProminent)
+                    .keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(32)
+        .frame(width: 560)
+        .frame(minHeight: 280)
+    }
+}
+
 @main
 struct ChironeGestionaleApp: App {
+    @NSApplicationDelegateAdaptor(ChironeApplicationDelegate.self) private var applicationDelegate
     private let backupUIService = BackupUIService()
     @AppStorage("report.notesInReport") private var reportNotesInReport = 3
     @StateObject private var printCommandState = PrintCommandState()
     @StateObject private var commandPaletteState = CommandPaletteState()
+    @StateObject private var store = ModelStoreState()
+    @ObservedObject private var lockViewModel = AppLockViewModel.shared
 
     init() {
         // Build autocomplete indices off the main thread so the first
@@ -404,48 +479,31 @@ struct ChironeGestionaleApp: App {
         Task.detached(priority: .utility) { _ = ActiveIngredientAutocomplete.shared }
     }
 
-    var sharedModelContainer: ModelContainer = {
-        let schema = Schema([
-            Patient.self,
-            ClinicalNote.self,
-            TherapyMedication.self,
-        ])
-        let modelConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
-
-        do {
-            return try ModelContainer(for: schema, configurations: [modelConfiguration])
-        } catch {
-            // Fallback per store incompatibile durante sviluppo: evita crash all'avvio.
-            // Da sostituire con migrazioni versionate nello sprint di hardening.
-            do {
-                let inMemoryConfiguration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
-                return try ModelContainer(for: schema, configurations: [inMemoryConfiguration])
-            } catch {
-                fatalError("Could not create ModelContainer (persistent/inMemory): \(error)")
-            }
-        }
-    }()
-
     var body: some Scene {
         WindowGroup {
-            AppLockGateView {
-                ContentView()
+            if let container = store.container {
+                AppLockGateView {
+                    ContentView()
+                }
+                .environmentObject(commandPaletteState)
+                .modelContainer(container)
+            } else {
+                StoreUnavailableView(store: store)
             }
-            .environmentObject(commandPaletteState)
         }
-        .modelContainer(sharedModelContainer)
         .commands {
             CommandGroup(after: .sidebar) {
                 Button("Apri Command Palette…") {
                     commandPaletteState.present()
                 }
                 .keyboardShortcut("k", modifiers: [.command])
+                .disabled(store.container == nil || !lockViewModel.permitsClinicalAccess)
 
                 Button("Quick Capture Clinico…") {
                     requestQuickClinicalCapture()
                 }
                 .keyboardShortcut(.space, modifiers: [.command, .option])
-                .disabled(!printCommandState.canPrintReport)
+                .disabled(!printCommandState.canPrintReport || !lockViewModel.permitsClinicalAccess)
             }
 
             CommandGroup(before: .printItem) {
@@ -455,19 +513,31 @@ struct ChironeGestionaleApp: App {
                     Label(exportReportCommandTitle, systemImage: "doc.richtext")
                 }
                 .keyboardShortcut("p", modifiers: [.command])
-                .disabled(!printCommandState.canPrintReport)
+                .disabled(!printCommandState.canPrintReport || !lockViewModel.permitsClinicalAccess)
+
+                Button {
+                    exportActivePatientPrescription()
+                } label: {
+                    Label(exportPrescriptionCommandTitle, systemImage: "pills")
+                }
+                .keyboardShortcut("p", modifiers: [.command, .shift])
+                .disabled(!printCommandState.canPrintReport || !lockViewModel.permitsClinicalAccess)
             }
 
             CommandMenu("Backup") {
                 Button("Esporta backup cifrato…") {
-                    backupUIService.exportBackup(modelContainer: sharedModelContainer)
+                    guard lockViewModel.permitsClinicalAccess, let container = store.container else { return }
+                    backupUIService.exportBackup(modelContainer: container)
                 }
                 .keyboardShortcut("e", modifiers: [.command, .shift])
+                .disabled(store.container == nil || !lockViewModel.permitsClinicalAccess)
 
                 Button("Ripristina backup cifrato…") {
-                    backupUIService.restoreBackup(modelContainer: sharedModelContainer)
+                    guard lockViewModel.permitsClinicalAccess, let container = store.container else { return }
+                    backupUIService.restoreBackup(modelContainer: container)
                 }
                 .keyboardShortcut("r", modifiers: [.command, .shift])
+                .disabled(store.container == nil || !lockViewModel.permitsClinicalAccess)
 
                 Divider()
 
@@ -476,30 +546,38 @@ struct ChironeGestionaleApp: App {
                 }
                 .help(exportPatientDataHelpText)
                 .keyboardShortcut("d", modifiers: [.command, .shift])
-                .disabled(!printCommandState.canPrintReport)
+                .disabled(!printCommandState.canPrintReport || !lockViewModel.permitsClinicalAccess)
             }
         }
 
         Settings {
-            PreferencesView()
+            AppLockGateView { PreferencesView() }
         }
     }
 
     private var exportReportCommandTitle: String {
-        guard let patientName = printCommandState.activePatientName, !patientName.isEmpty else {
+        guard lockViewModel.permitsClinicalAccess, let patientName = printCommandState.activePatientName, !patientName.isEmpty else {
             return "Esporta referto…"
         }
         return "Esporta referto di \(patientName)…"
     }
 
+    private var exportPrescriptionCommandTitle: String {
+        guard lockViewModel.permitsClinicalAccess, let patientName = printCommandState.activePatientName, !patientName.isEmpty else {
+            return "Componi prescrizione medica…"
+        }
+        return "Componi prescrizione medica per \(patientName)…"
+    }
+
     private var exportPatientDataHelpText: String {
-        guard let patientName = printCommandState.activePatientName, !patientName.isEmpty else {
+        guard lockViewModel.permitsClinicalAccess, let patientName = printCommandState.activePatientName, !patientName.isEmpty else {
             return "Apri o attiva una cartella clinica paziente per abilitare l'export."
         }
         return "Esporta i dati strutturati del paziente attivo: \(patientName)."
     }
 
     private func exportActivePatientReport() {
+        guard lockViewModel.permitsClinicalAccess else { return }
         guard let patient = PatientWindowCoordinator.shared.activePatient() else {
             let alert = NSAlert()
             alert.alertStyle = .informational
@@ -509,30 +587,56 @@ struct ChironeGestionaleApp: App {
             alert.runModal()
             return
         }
+        let options = ReportOptions(recentNotesCount: reportNotesInReport)
+        let draft = PatientReportService.shared.makeDraft(for: patient, options: options)
+        ReportPreviewWindowCoordinator.shared.present(
+            draft: draft,
+            profile: .current(),
+            reloadDraft: {
+                PatientReportService.shared.makeDraft(for: patient, options: options)
+            }
+        )
+    }
+
+    private func exportActivePatientPrescription() {
+        guard lockViewModel.permitsClinicalAccess else { return }
+        guard let patient = PatientWindowCoordinator.shared.activePatient() else {
+            let alert = NSAlert()
+            alert.alertStyle = .informational
+            alert.messageText = "Nessuna scheda clinica attiva"
+            alert.informativeText = "Apri o attiva una scheda clinica paziente prima di generare la ricetta."
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
+            return
+        }
         do {
-            let document = try PatientReportService.shared.makeReportDocument(
-                for: patient,
-                latestNotesCount: reportNotesInReport
+            let draft = try PatientPrescriptionService.shared.makeDraft(for: patient)
+            PrescriptionPreviewWindowCoordinator.shared.present(
+                draft: draft,
+                profile: .current(),
+                reloadDraft: {
+                    try PatientPrescriptionService.shared.makeDraft(for: patient)
+                }
             )
-            AuditTrailService.shared.log(
-                .reportExported,
-                metadata: ["patient": AuditTrailService.shared.redactedIdentifier(for: patient.id)]
-            )
-            ReportPreviewWindowCoordinator.shared.present(
-                document: document,
-                title: patient.fullName
-            )
+        } catch PatientPrescriptionServiceError.noActiveTherapy {
+            let alert = NSAlert()
+            alert.alertStyle = .informational
+            alert.messageText = "Nessuna terapia attiva"
+            alert.informativeText = "Il paziente non ha una terapia farmacologica attiva da prescrivere."
+            alert.addButton(withTitle: "OK")
+            alert.runModal()
         } catch {
             let alert = NSAlert()
             alert.alertStyle = .critical
-            alert.messageText = "Errore esportazione referto"
-            alert.informativeText = "Impossibile generare l'anteprima del referto clinico."
+            alert.messageText = "Errore generazione ricetta"
+            alert.informativeText = error.localizedDescription
             alert.addButton(withTitle: "OK")
             alert.runModal()
         }
     }
 
     private func exportActivePatientPortabilityData() {
+        guard lockViewModel.permitsClinicalAccess else { return }
         guard let patient = PatientWindowCoordinator.shared.activePatient() else {
             let alert = NSAlert()
             alert.alertStyle = .informational
@@ -547,6 +651,7 @@ struct ChironeGestionaleApp: App {
     }
 
     private func requestQuickClinicalCapture() {
+        guard lockViewModel.permitsClinicalAccess else { return }
         guard let patient = PatientWindowCoordinator.shared.activePatient() else {
             NSSound.beep()
             return
